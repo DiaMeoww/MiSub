@@ -2,7 +2,7 @@ import { getCache } from '../../services/node-cache-service.js';
 import { assertPublicNetworkUrl } from '../security-utils.js';
 
 const TEMPLATE_CACHE_PREFIX = 'transform_template_';
-const DEFAULT_REVALIDATE_INTERVAL_SECONDS = 5 * 60;
+const DEFAULT_REVALIDATE_INTERVAL_SECONDS = 0;
 const DEFAULT_CACHE_MAX_AGE_SECONDS = 24 * 60 * 60;
 const MIN_REVALIDATE_INTERVAL_SECONDS = 0;
 const MAX_REVALIDATE_INTERVAL_SECONDS = 24 * 60 * 60;

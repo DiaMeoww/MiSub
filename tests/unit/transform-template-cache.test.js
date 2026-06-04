@@ -44,6 +44,7 @@ describe('Transform template cache', () => {
     });
 
     it('returns fresh cached template without revalidating within the short interval', async () => {
+        globalThis.TEMPLATE_REVALIDATE_INTERVAL_SECONDS = 300;
         const storage = createStorage({
             nodes: 'cached template',
             timestamp: Date.now() - 60 * 1000,
