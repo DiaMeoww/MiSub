@@ -216,7 +216,27 @@ export function validateProfile(profile) {
         },
         transformConfig: {
             validator: (value) => {
-                if (value && !isValidUrl(value)) {
+                if (!value) return null;
+                
+                // 允许 builtin: 和 custom: 前缀（内置/自定义模板）
+                if (value.startsWith('builtin:')) {
+                    const templateName = value.slice(8).trim();
+                    if (!templateName) {
+                        return 'builtin: 模板名称不能为空';
+                    }
+                    return null;
+                }
+                
+                if (value.startsWith('custom:')) {
+                    const templateName = value.slice(7).trim();
+                    if (!templateName) {
+                        return 'custom: 模板名称不能为空';
+                    }
+                    return null;
+                }
+                
+                // 其他情况必须是有效的 URL
+                if (!isValidUrl(value)) {
                     return '请输入有效的外部规则模板URL，或留空使用内置模板';
                 }
                 return null;
