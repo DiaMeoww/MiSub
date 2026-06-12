@@ -44,12 +44,7 @@ export async function resolveNodeListWithCache({
     let cacheHeaders = {};
     const canUseCachedData = cachedData && hasUsableCachedNodes(cachedData);
 
-    if (cacheStatus === 'fresh' && canUseCachedData) {
-        const cachedNodeCount = countCachedNodes(cachedData);
-        combinedNodeList = cachedData.nodes;
-        cacheHeaders = createCacheHeaders('HIT', cachedNodeCount);
-        populateCachedStats(context, cachedNodeCount, targetMisubsCount);
-    } else if ((cacheStatus === 'stale' || cacheStatus === 'expired') && canUseCachedData) {
+    if ((cacheStatus === 'stale' || cacheStatus === 'expired') && canUseCachedData) {
         const cachedNodeCount = countCachedNodes(cachedData);
         combinedNodeList = cachedData.nodes;
         cacheHeaders = createCacheHeaders('REFRESHING', cachedNodeCount);

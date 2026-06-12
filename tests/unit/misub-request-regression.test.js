@@ -322,7 +322,7 @@ describe('handleMisubRequest regression coverage', () => {
         }
     });
 
-    it.each(['refresh', 'nocache', 'debug'])('bypasses fresh aggregate cache when %s is present', async (paramName) => {
+    it.each(['refresh', 'nocache', 'debug'])('bypasses aggregate cache when %s is present', async (paramName) => {
         const subscriptions = [{
             id: 'sub-a',
             name: 'Airport A',

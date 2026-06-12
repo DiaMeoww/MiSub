@@ -181,17 +181,15 @@ URL 参数可以覆盖部分转换行为：
 
 缓存读取由 `resolveNodeListWithCache()` 完成：
 
-- `fresh` 且有可用节点：直接返回缓存，响应头 `X-Cache-Status: HIT`。
-- `stale` 或 `expired` 且有可用节点：先返回缓存，响应头 `X-Cache-Status: REFRESHING`，并通过 `waitUntil()` 后台刷新。
+- 1 小时内有可用节点缓存：先返回缓存，响应头 `X-Cache-Status: REFRESHING`，并通过 `waitUntil()` 后台刷新。
 - 缓存缺失、不可用、强制刷新：同步执行 `refreshNodes(false)`，响应头 `X-Cache-Status: MISS`。
 
 缓存 TTL 语义：
 
-- fresh：3 分钟。
-- stale：1 小时内可用并后台刷新。
-- max age：12 小时。
+- usable：1 小时内可用并后台刷新。
+- max age：1 小时；超过后同步重新拉取。
 - 后台刷新超时：25 秒。
-- stale/expired 后台刷新有 10 秒防抖，避免同一 key 高频重复刷新。
+- 后台刷新有 10 秒防抖，避免同一 key 高频重复刷新。
 
 写聚合缓存时：
 
@@ -459,7 +457,7 @@ HTTP 订阅源定义为 URL 以 `http` 开头的订阅项。
 常见订阅响应头：
 
 - `Cache-Control: no-store, no-cache`
-- `X-Cache-Status: HIT | REFRESHING | MISS`
+- `X-Cache-Status: REFRESHING | MISS`
 - `X-Node-Count: {count}`
 - `X-Cache-Time: {iso-time}`
 - `X-MiSub-Mode: node-export-plain | external-redirect-v2 | builtin-{targetFormat}`

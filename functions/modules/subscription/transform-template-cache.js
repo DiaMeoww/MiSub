@@ -2,10 +2,7 @@ import { getCache } from '../../services/node-cache-service.js';
 import { assertPublicNetworkUrl } from '../security-utils.js';
 
 const TEMPLATE_CACHE_PREFIX = 'transform_template_';
-const DEFAULT_REVALIDATE_INTERVAL_SECONDS = 0;
 const DEFAULT_CACHE_MAX_AGE_SECONDS = 24 * 60 * 60;
-const MIN_REVALIDATE_INTERVAL_SECONDS = 0;
-const MAX_REVALIDATE_INTERVAL_SECONDS = 24 * 60 * 60;
 const MIN_CACHE_MAX_AGE_SECONDS = 5 * 60;
 const MAX_CACHE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
@@ -25,15 +22,9 @@ function clampNumber(value, min, max) {
 }
 
 function getTemplateCacheConfig(storageAdapter) {
-    const revalidateSetting = readNumericSetting('TEMPLATE_REVALIDATE_INTERVAL_SECONDS', storageAdapter);
     const maxAgeSetting = readNumericSetting('TEMPLATE_CACHE_MAX_AGE_SECONDS', storageAdapter);
 
     return {
-        revalidateIntervalMs: clampNumber(
-            revalidateSetting ?? DEFAULT_REVALIDATE_INTERVAL_SECONDS,
-            MIN_REVALIDATE_INTERVAL_SECONDS,
-            MAX_REVALIDATE_INTERVAL_SECONDS
-        ) * 1000,
         maxAgeSeconds: clampNumber(
             maxAgeSetting ?? DEFAULT_CACHE_MAX_AGE_SECONDS,
             MIN_CACHE_MAX_AGE_SECONDS,
@@ -94,10 +85,6 @@ export async function fetchTransformTemplate(storageAdapter, templateUrl, forceR
     const cacheKey = makeTemplateCacheKey(safeTemplateUrl);
     const cacheConfig = getTemplateCacheConfig(storageAdapter);
     const { data: cachedTemplate } = await getCache(storageAdapter, cacheKey);
-
-    if (!forceRefresh && cachedTemplate?.nodes && isCacheYoungerThan(cachedTemplate, cacheConfig.revalidateIntervalMs)) {
-        return cachedTemplate.nodes;
-    }
 
     let response;
     try {

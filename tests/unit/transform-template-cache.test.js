@@ -43,7 +43,7 @@ describe('Transform template cache', () => {
         }));
     });
 
-    it('returns fresh cached template without revalidating within the short interval', async () => {
+    it('revalidates cached template even within a configured short interval', async () => {
         globalThis.TEMPLATE_REVALIDATE_INTERVAL_SECONDS = 300;
         const storage = createStorage({
             nodes: 'cached template',
@@ -54,9 +54,15 @@ describe('Transform template cache', () => {
 
         const result = await fetchTransformTemplate(storage, 'https://example.com/template.yaml');
 
-        expect(result).toBe('cached template');
-        expect(fetch).not.toHaveBeenCalled();
-        expect(storage.put).not.toHaveBeenCalled();
+        expect(result).toContain('proxies: <%proxies%>');
+        expect(fetch).toHaveBeenCalledWith('https://example.com/template.yaml', {
+            headers: {
+                'User-Agent': 'MiSub-Template-Fetch/1.0',
+                'If-None-Match': '"cached"',
+                'If-Modified-Since': 'Wed, 13 May 2026 00:00:00 GMT'
+            }
+        });
+        expect(storage.put).toHaveBeenCalled();
     });
 
     it('revalidates stale cached template with ETag and Last-Modified headers', async () => {
@@ -80,7 +86,7 @@ describe('Transform template cache', () => {
 
 
 
-    it('reads revalidation settings from storage adapter env when available', async () => {
+    it('ignores storage adapter revalidation intervals and still checks the remote template', async () => {
         const storage = {
             ...createStorage({
                 nodes: 'cached template',
@@ -88,7 +94,7 @@ describe('Transform template cache', () => {
                 etag: '"cached"'
             }),
             env: {
-                TEMPLATE_REVALIDATE_INTERVAL_SECONDS: '0'
+                TEMPLATE_REVALIDATE_INTERVAL_SECONDS: '300'
             }
         };
 

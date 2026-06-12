@@ -10,9 +10,9 @@
  */
 const CACHE_CONFIG = {
     KEY_PREFIX: 'node_cache_',           // 缓存键前缀
-    FRESH_TTL: 3 * 60 * 1000,            // 新鲜期：3 分钟（命中时不触发后台刷新）
-    STALE_TTL: 60 * 60 * 1000,           // 可用期：1 小时（超过后同步获取）
-    MAX_AGE: 60 * 60 * 1000,        // 最大缓存时间：12 小时 -> 1 小时
+    FRESH_TTL: 0,                        // 禁用直接命中：可用缓存也要触发后台刷新
+    STALE_TTL: 60 * 60 * 1000,           // 1 小时内返回旧缓存并后台刷新
+    MAX_AGE: 60 * 60 * 1000,             // 超过 1 小时同步重新拉取
     BACKGROUND_REFRESH_TIMEOUT: 25000    // 后台刷新超时：25 秒
 };
 
@@ -47,7 +47,7 @@ function isSubscriptionNodeCacheKey(key) {
  * 获取缓存
  * @param {Object} storageAdapter - 存储适配器
  * @param {string} cacheKey - 缓存键
- * @returns {Promise<{data: CacheEntry|null, status: 'fresh'|'stale'|'expired'|'miss'}>}
+ * @returns {Promise<{data: CacheEntry|null, status: 'stale'|'expired'|'miss'}>}
  */
 export async function getCache(storageAdapter, cacheKey) {
     try {
@@ -59,9 +59,7 @@ export async function getCache(storageAdapter, cacheKey) {
         const now = Date.now();
         const age = now - cached.timestamp;
 
-        if (age < CACHE_CONFIG.FRESH_TTL) {
-            return { data: cached, status: 'fresh' };
-        } else if (age < CACHE_CONFIG.STALE_TTL) {
+        if (age < CACHE_CONFIG.STALE_TTL) {
             return { data: cached, status: 'stale' };
         } else if (age < CACHE_CONFIG.MAX_AGE) {
             return { data: cached, status: 'expired' };

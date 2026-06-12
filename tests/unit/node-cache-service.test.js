@@ -30,31 +30,29 @@ describe('node-cache-service', () => {
         expect(result.data).toBeNull();
     });
 
-    it('returns stale/expired based on age', async () => {
-        const { FRESH_TTL, STALE_TTL, MAX_AGE } = getCacheConfig();
+    it('keeps usable caches stale for one hour and misses after max age', async () => {
+        const { STALE_TTL, MAX_AGE } = getCacheConfig();
         const now = Date.now();
 
         const storage = createStorage({
-            stale: { nodes: 'a', timestamp: now - (FRESH_TTL + 1000), nodeCount: 1, sources: [] },
-            // STALE_TTL == MAX_AGE 时，STALE_TTL + 1000 已超过 MAX_AGE，直接变 miss
-            expired: { nodes: 'b', timestamp: now - (STALE_TTL + 1000), nodeCount: 2, sources: [] },
+            stale: { nodes: 'a', timestamp: now, nodeCount: 1, sources: [] },
+            almostExpired: { nodes: 'b', timestamp: now - (STALE_TTL - 1000), nodeCount: 2, sources: [] },
             miss: { nodes: 'c', timestamp: now - (MAX_AGE + 1000), nodeCount: 3, sources: [] }
         });
 
         const stale = await getCache(storage, 'stale');
         expect(stale.status).toBe('stale');
 
-        const expired = await getCache(storage, 'expired');
-        // 当 STALE_TTL == MAX_AGE 时，expired 状态不可达，直接变为 miss
-        expect(expired.status).toBe(STALE_TTL < MAX_AGE ? 'expired' : 'miss');
+        const almostExpired = await getCache(storage, 'almostExpired');
+        expect(almostExpired.status).toBe('stale');
 
         const miss = await getCache(storage, 'miss');
         expect(miss.status).toBe('miss');
     });
 
     it('creates cache headers with status and count', () => {
-        const headers = createCacheHeaders('HIT', 42);
-        expect(headers['X-Cache-Status']).toBe('HIT');
+        const headers = createCacheHeaders('REFRESHING', 42);
+        expect(headers['X-Cache-Status']).toBe('REFRESHING');
         expect(headers['X-Node-Count']).toBe('42');
         expect(headers['X-Cache-Time']).toBeTruthy();
     });

@@ -8,9 +8,9 @@ function createStorage(cachedData) {
 }
 
 describe('resolveNodeListWithCache', () => {
-    it('returns a fresh non-empty cache without refreshing', async () => {
+    it('returns a usable cache while refreshing it in the background', async () => {
         const refreshNodes = vi.fn().mockResolvedValue('trojan://password@1.2.3.5:443#JP-01');
-        const context = {};
+        const context = { waitUntil: vi.fn() };
 
         const result = await resolveNodeListWithCache({
             storageAdapter: createStorage({
@@ -27,13 +27,15 @@ describe('resolveNodeListWithCache', () => {
         });
 
         expect(result.combinedNodeList).toBe('trojan://password@1.2.3.4:443#HK-01');
-        expect(result.cacheHeaders['X-Cache-Status']).toBe('HIT');
+        expect(result.cacheHeaders['X-Cache-Status']).toBe('REFRESHING');
         expect(result.cacheHeaders['X-Node-Count']).toBe('1');
-        expect(refreshNodes).not.toHaveBeenCalled();
+        expect(refreshNodes).toHaveBeenCalledTimes(1);
+        expect(refreshNodes).toHaveBeenCalledWith(true);
+        expect(context.waitUntil).toHaveBeenCalledTimes(1);
         expect(context.generationStats.totalNodes).toBe(1);
     });
 
-    it('refreshes synchronously when a fresh cache contains zero nodes', async () => {
+    it('refreshes synchronously when a usable cache contains zero nodes', async () => {
         const refreshNodes = vi.fn().mockResolvedValue('trojan://password@1.2.3.4:443#HK-01');
 
         const result = await resolveNodeListWithCache({
