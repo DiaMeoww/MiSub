@@ -11,8 +11,8 @@
 const CACHE_CONFIG = {
     KEY_PREFIX: 'node_cache_',           // 缓存键前缀
     FRESH_TTL: 0,                        // 禁用直接命中：可用缓存也要触发后台刷新
-    STALE_TTL: 60 * 60 * 1000,           // 1 小时内返回旧缓存并后台刷新
-    MAX_AGE: 60 * 60 * 1000,             // 超过 1 小时同步重新拉取
+    STALE_TTL: 0,                        // 禁用 STALE 缓存
+    MAX_AGE: 0,                          // 禁用缓存有效时长
     BACKGROUND_REFRESH_TIMEOUT: 25000    // 后台刷新超时：25 秒
 };
 
@@ -56,13 +56,17 @@ export async function getCache(storageAdapter, cacheKey) {
             return { data: null, status: 'miss' };
         }
 
+        // 极简放行：若不是节点缓存（如模板缓存），不进行 0 过滤，直接返回
+        if (typeof cacheKey === 'string' && !cacheKey.startsWith(CACHE_CONFIG.KEY_PREFIX)) {
+            return { data: cached, status: 'stale' };
+        }
+
         const now = Date.now();
         const age = now - cached.timestamp;
-        const config = getCacheConfig(storageAdapter, cacheKey);
 
-        if (age < config.STALE_TTL) {
+        if (age < CACHE_CONFIG.STALE_TTL) {
             return { data: cached, status: 'stale' };
-        } else if (age < config.MAX_AGE) {
+        } else if (age < CACHE_CONFIG.MAX_AGE) {
             return { data: cached, status: 'expired' };
         } else {
             return { data: null, status: 'miss' };
@@ -101,14 +105,12 @@ export async function setCache(storageAdapter, cacheKey, nodes, sources = []) {
         };
 
         // 计算 TTL（秒），使用 MAX_AGE 作为过期时间
-        const config = getCacheConfig(storageAdapter, cacheKey);
-        const ttlSeconds = Math.ceil(config.MAX_AGE / 1000);
+        const ttlSeconds = Math.ceil(CACHE_CONFIG.MAX_AGE / 1000);
 
         // 尝试使用 KV 原生 TTL
         if (storageAdapter.kv && typeof storageAdapter.kv.put === 'function') {
-            await storageAdapter.kv.put(cacheKey, JSON.stringify(cacheEntry), {
-                expirationTtl: ttlSeconds
-            });
+            const options = ttlSeconds >= 60 ? { expirationTtl: ttlSeconds } : {};
+            await storageAdapter.kv.put(cacheKey, JSON.stringify(cacheEntry), options);
         } else {
             // 降级：使用普通 put（无 TTL）
             await storageAdapter.put(cacheKey, cacheEntry);
@@ -164,27 +166,8 @@ export function createCacheHeaders(status, nodeCount) {
 /**
  * 获取缓存配置（供外部使用）
  */
-export function getCacheConfig(storageAdapter, cacheKey = '') {
-    const isTemplate = typeof cacheKey === 'string' && cacheKey.startsWith('transform_template_');
-
-    if (isTemplate) {
-        const maxAgeSetting = storageAdapter?.env?.TEMPLATE_CACHE_MAX_AGE_SECONDS ?? globalThis.TEMPLATE_CACHE_MAX_AGE_SECONDS;
-        const maxAge = maxAgeSetting !== undefined ? Number(maxAgeSetting) * 1000 : 24 * 60 * 60 * 1000;
-        return {
-            ...CACHE_CONFIG,
-            STALE_TTL: 0,
-            MAX_AGE: maxAge
-        };
-    }
-
-    const staleTtl = storageAdapter?.env?.NODE_CACHE_STALE_TTL ?? globalThis.NODE_CACHE_STALE_TTL;
-    const maxAge = storageAdapter?.env?.NODE_CACHE_MAX_AGE ?? globalThis.NODE_CACHE_MAX_AGE;
-
-    return {
-        ...CACHE_CONFIG,
-        STALE_TTL: staleTtl !== undefined ? Number(staleTtl) : 0,
-        MAX_AGE: maxAge !== undefined ? Number(maxAge) : 0
-    };
+export function getCacheConfig() {
+    return { ...CACHE_CONFIG };
 }
 
 /**

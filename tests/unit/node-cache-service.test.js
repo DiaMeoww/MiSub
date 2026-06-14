@@ -23,16 +23,6 @@ function createStorage(initialData = {}) {
 }
 
 describe('node-cache-service', () => {
-    beforeEach(() => {
-        globalThis.NODE_CACHE_STALE_TTL = 60 * 60 * 1000;
-        globalThis.NODE_CACHE_MAX_AGE = 60 * 60 * 1000;
-    });
-
-    afterEach(() => {
-        delete globalThis.NODE_CACHE_STALE_TTL;
-        delete globalThis.NODE_CACHE_MAX_AGE;
-    });
-
     it('returns miss when cache is empty', async () => {
         const storage = createStorage();
         const result = await getCache(storage, 'missing');
@@ -40,24 +30,23 @@ describe('node-cache-service', () => {
         expect(result.data).toBeNull();
     });
 
-    it('keeps usable caches stale for one hour and misses after max age', async () => {
-        const { STALE_TTL, MAX_AGE } = getCacheConfig();
+    it('keeps node caches missed under 0 TTL configuration but allows template caches to exist', async () => {
         const now = Date.now();
 
         const storage = createStorage({
-            stale: { nodes: 'a', timestamp: now, nodeCount: 1, sources: [] },
-            almostExpired: { nodes: 'b', timestamp: now - (STALE_TTL - 1000), nodeCount: 2, sources: [] },
-            miss: { nodes: 'c', timestamp: now - (MAX_AGE + 1000), nodeCount: 3, sources: [] }
+            'node_cache_stale': { nodes: 'a', timestamp: now, nodeCount: 1, sources: [] },
+            'transform_template_test': { nodes: 'template_content', timestamp: now, nodeCount: 0, sources: [] }
         });
 
-        const stale = await getCache(storage, 'stale');
-        expect(stale.status).toBe('stale');
+        // 节点缓存总是返回 miss
+        const nodeCache = await getCache(storage, 'node_cache_stale');
+        expect(nodeCache.status).toBe('miss');
+        expect(nodeCache.data).toBeNull();
 
-        const almostExpired = await getCache(storage, 'almostExpired');
-        expect(almostExpired.status).toBe('stale');
-
-        const miss = await getCache(storage, 'miss');
-        expect(miss.status).toBe('miss');
+        // 模板缓存由于非 node_cache_ 开头被特判放行，应该能够被正常获取数据
+        const templateCache = await getCache(storage, 'transform_template_test');
+        expect(templateCache.data).not.toBeNull();
+        expect(templateCache.data.nodes).toBe('template_content');
     });
 
     it('creates cache headers with status and count', () => {
@@ -91,11 +80,11 @@ describe('node-cache-service', () => {
 
         try {
             const updated = await setCache(storage, 'cache', '', ['机场']);
-            const cached = await getCache(storage, 'cache');
+            const cached = await storage.get('cache');
 
             expect(updated).toBe(false);
-            expect(cached.data.nodes).toBe('trojan://password@1.2.3.4:443#HK-01\n');
-            expect(cached.data.nodeCount).toBe(1);
+            expect(cached.nodes).toBe('trojan://password@1.2.3.4:443#HK-01\n');
+            expect(cached.nodeCount).toBe(1);
             expect(warnSpy).toHaveBeenCalledWith('[Cache] Refusing to overwrite non-empty cache cache with empty node list');
         } finally {
             warnSpy.mockRestore();

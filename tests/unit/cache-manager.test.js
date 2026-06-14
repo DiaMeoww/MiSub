@@ -8,17 +8,7 @@ function createStorage(cachedData) {
 }
 
 describe('resolveNodeListWithCache', () => {
-    beforeEach(() => {
-        globalThis.NODE_CACHE_STALE_TTL = 60 * 60 * 1000;
-        globalThis.NODE_CACHE_MAX_AGE = 60 * 60 * 1000;
-    });
-
-    afterEach(() => {
-        delete globalThis.NODE_CACHE_STALE_TTL;
-        delete globalThis.NODE_CACHE_MAX_AGE;
-    });
-
-    it('returns a usable cache while refreshing it in the background', async () => {
+    it('always triggers synchronous refresh and returns MISS even when cache is present under 0 TTL configuration', async () => {
         const refreshNodes = vi.fn().mockResolvedValue('trojan://password@1.2.3.5:443#JP-01');
         const context = { waitUntil: vi.fn() };
 
@@ -36,13 +26,12 @@ describe('resolveNodeListWithCache', () => {
             targetMisubsCount: 1
         });
 
-        expect(result.combinedNodeList).toBe('trojan://password@1.2.3.4:443#HK-01');
-        expect(result.cacheHeaders['X-Cache-Status']).toBe('REFRESHING');
+        expect(result.combinedNodeList).toBe('trojan://password@1.2.3.5:443#JP-01');
+        expect(result.cacheHeaders['X-Cache-Status']).toBe('MISS');
         expect(result.cacheHeaders['X-Node-Count']).toBe('1');
         expect(refreshNodes).toHaveBeenCalledTimes(1);
-        expect(refreshNodes).toHaveBeenCalledWith(true);
-        expect(context.waitUntil).toHaveBeenCalledTimes(1);
-        expect(context.generationStats.totalNodes).toBe(1);
+        expect(refreshNodes).toHaveBeenCalledWith(false);
+        expect(context.waitUntil).not.toHaveBeenCalled();
     });
 
     it('refreshes synchronously when a usable cache contains zero nodes', async () => {
