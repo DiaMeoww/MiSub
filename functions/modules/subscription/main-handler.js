@@ -5,6 +5,7 @@ import { sendEnhancedTgNotification, tgEscape } from '../notifications.js';
 import { KV_KEY_SUBS, KV_KEY_PROFILES, KV_KEY_SETTINGS, DEFAULT_SETTINGS as defaultSettings, DEFAULT_SUBCONVERTER_BACKEND } from '../config.js';
 import { createDisguiseResponse } from '../disguise-page.js';
 import { generateCacheKey, setCache } from '../../services/node-cache-service.js';
+import { countNodeLines, prepareExternalNodesCallback, shouldUseExternalNodesCallback } from '../../services/external-nodes-callback-service.js';
 import { resolveRequestContext } from './request-context.js';
 import { resolveNodeListWithCache } from './cache-manager.js';
 import { ProcessorService } from '../../services/processor-service.js';
@@ -158,7 +159,37 @@ export function resolveTemplateSource(value) {
 
 export function resolveExternalTemplateConfigUrl(templateSource) {
     if (!templateSource || typeof templateSource !== 'object') return '';
-    return templateSource.kind === 'remote' ? String(templateSource.value || '').trim() : '';
+    if (templateSource.kind !== 'remote') return '';
+    return normalizeExternalTemplateConfigUrl(String(templateSource.value || '').trim());
+}
+
+export function normalizeExternalTemplateConfigUrl(input) {
+    const raw = typeof input === 'string' ? input.trim() : '';
+    if (!raw) return '';
+
+    try {
+        const parsed = new URL(raw);
+        if (parsed.hostname.toLowerCase() !== 'github.com') {
+            return raw;
+        }
+
+        const parts = parsed.pathname.split('/').filter(Boolean);
+        const markerIndex = parts.findIndex(part => part === 'blob' || part === 'raw');
+        if (parts.length < 5 || markerIndex !== 2) {
+            return raw;
+        }
+
+        const [owner, repo, , branch, ...fileParts] = parts;
+        if (!owner || !repo || !branch || fileParts.length === 0) {
+            return raw;
+        }
+
+        const rawUrl = new URL(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${fileParts.join('/')}`);
+        rawUrl.search = parsed.search;
+        return rawUrl.toString();
+    } catch {
+        return raw;
+    }
 }
 
 export function normalizeSubconverterBackend(input, fallback = DEFAULT_SUBCONVERTER_BACKEND) {
@@ -305,6 +336,16 @@ export function resolveBuiltinRequestOptions({ searchParams, userAgent = '' } = 
         searchParams: searchParams || new URLSearchParams(''),
         hiddifyCompatible: isHiddifyAgent(userAgent)
     };
+}
+
+export function shouldRenderClashYamlProfileTemplateLocally({ isExternalMode = false, targetFormat = '', templateSource = {} } = {}) {
+    if (!isExternalMode || targetFormat !== 'clash' || templateSource?.kind !== 'remote') return false;
+    try {
+        const parsed = new URL(String(templateSource.value || '').trim());
+        return /\.ya?ml$/i.test(parsed.pathname);
+    } catch {
+        return /\.ya?ml(?:[?#].*)?$/i.test(String(templateSource.value || '').trim());
+    }
 }
 
 /**
@@ -703,11 +744,56 @@ export async function handleMisubRequest(context) {
 
     // 2. If external mode active, build the redirect URL and return 302
     if (isExternalMode && targetFormat !== 'base64') {
+        if (shouldRenderClashYamlProfileTemplateLocally({ isExternalMode, targetFormat, templateSource })) {
+            try {
+                const userInfoHeader = buildUserInfoHeaderFromSubscriptions(context, targetMisubs);
+                const builtinOptions = {
+                    ...resolveBuiltinRequestOptions({ searchParams: url.searchParams, userAgent: userAgentHeader }),
+                    fileName: subName,
+                    managedConfigUrl: buildManagedConfigUrl(request.url),
+                    interval: config.UpdateInterval || 86400,
+                    skipCertVerify: shouldSkipCertificateVerify,
+                    enableUdp: shouldEnableUdp,
+                    enableTfo: urlTfo === 'true' || urlTfo === '1',
+                    ruleLevel,
+                    isMeta: isMetaCore(userAgentHeader, url.searchParams)
+                };
+                const rendered = await ProcessorService.renderOutput({
+                    targetFormat,
+                    combinedNodeList: isProfileExpired ? (DEFAULT_EXPIRED_NODE + '\n') : combinedNodeList,
+                    subName,
+                    config,
+                    builtinOptions,
+                    templateSource,
+                    managedConfigUrl: builtinOptions.managedConfigUrl,
+                    storageAdapter,
+                    userInfoHeader
+                });
+
+                if (rendered.headers?.['X-MiSub-Template-Mode'] === 'clash-yaml-profile') {
+                    const responseHeaders = new Headers({
+                        'Content-Type': rendered.contentType || 'application/x-yaml; charset=utf-8',
+                        'Cache-Control': 'no-store, no-cache',
+                        'X-MiSub-Mode': 'local-clash-yaml-profile-template'
+                    });
+                    if (userInfoHeader) {
+                        responseHeaders.set('Subscription-Userinfo', userInfoHeader);
+                        responseHeaders.set('Profile-Update-Interval', String(config.UpdateInterval || 24));
+                    }
+                    Object.entries(rendered.headers || {}).forEach(([key, value]) => responseHeaders.set(key, value));
+                    return new Response(rendered.content, { headers: responseHeaders });
+                }
+            } catch (err) {
+                console.warn('[ExternalTemplate] Local Clash YAML profile render failed, falling back to external redirect:', err?.message || err);
+            }
+        }
+
         const backend = url.searchParams.get('backend') || profileSub.backend || globalSub.defaultBackend;
-        const externalUrl = buildExternalSubconverterUrl({
+        const externalNodeList = isProfileExpired ? (DEFAULT_EXPIRED_NODE + '\n') : combinedNodeList;
+        let externalUrl = buildExternalSubconverterUrl({
             backend,
             targetFormat,
-            nodeList: isProfileExpired ? (DEFAULT_EXPIRED_NODE + '\n') : combinedNodeList,
+            nodeList: externalNodeList,
             requestUrl: request.url,
             profileSub,
             globalSub,
@@ -716,6 +802,33 @@ export async function handleMisubRequest(context) {
             templateSource,
             subName
         });
+        let externalRedirectMode = 'external-redirect-v2';
+
+        if (shouldUseExternalNodesCallback({
+            inlineUrlLength: externalUrl.toString().length,
+            nodeCount: countNodeLines(externalNodeList)
+        })) {
+            const callbackProfileId = profileIdentifier || token || 'default';
+            const callback = await prepareExternalNodesCallback({
+                env,
+                requestUrl: request.url,
+                profileId: callbackProfileId,
+                nodesText: externalNodeList
+            });
+            externalUrl = buildExternalSubconverterUrl({
+                backend,
+                targetFormat,
+                nodeList: callback.callbackUrl,
+                requestUrl: request.url,
+                profileSub,
+                globalSub,
+                userAgent: userAgentHeader,
+                searchParams: url.searchParams,
+                templateSource,
+                subName
+            });
+            externalRedirectMode = 'external-redirect-callback';
+        }
 
         // [Access Log] Send notification for external redirection
         if (!url.searchParams.has('callback_token') && !shouldSkipLogging && config.enableAccessLog) {
@@ -739,7 +852,7 @@ export async function handleMisubRequest(context) {
             headers: {
                 'Location': externalUrl.toString(),
                 'Cache-Control': 'no-store, no-cache',
-                'X-MiSub-Mode': 'external-redirect-v2',
+                'X-MiSub-Mode': externalRedirectMode,
                 ...(templateSource.kind === 'builtin' ? { 'X-MiSub-Template-Warning': 'external-engine-ignores-builtin-template' } : {})
             }
         });

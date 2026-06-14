@@ -5,7 +5,7 @@
 
 import { StorageFactory, DataMigrator } from '../storage-adapter.js';
 import { KV_KEY_SUBS } from './config.js';
-import { createJsonResponse, createErrorResponse, getAuthDebugInfo } from './utils.js';
+import { createJsonResponse, createErrorResponse, getAuthDebugInfo, JSON_BODY_LIMITS, readJsonWithLimit } from './utils.js';
 import { authMiddleware, handleLogin, handleLogout, getAuthSessionDiagnostic, getLoginPasswordDiagnostic } from './auth-middleware.js';
 import { handleDataRequest, handleMisubsSave, handleSettingsGet, handleSettingsSave, handleSettingsReset, handlePublicProfilesRequest, handlePublicConfig, handleUpdatePassword } from './api-handler.js';
 import { handleRuleTemplatesRequest } from './rule-template-handler.js';
@@ -50,6 +50,7 @@ import { handleParseSubscription } from './parse-subscription-handler.js';
 import { safeFetchPublicUrl, validatePublicFetchUrl, redactUrl } from './security-utils.js';
 import { normalizeSubconverterBackend } from './subscription/main-handler.js';
 import { maybeRunScheduledTasks } from './scheduled-task-runner.js';
+import { handleExternalNodesCallbackRequest } from '../services/external-nodes-callback-service.js';
 
 // 常量定义
 const OLD_KV_KEY = 'misub_data_v1';
@@ -67,6 +68,10 @@ function isAuthDiagnosticsEnabled(env) {
 export async function handleApiRequest(request, env, context = null) {
     const url = new URL(request.url);
     const path = url.pathname.replace(/^\/api/, '');
+
+    if (path === '/external-nodes-callback') {
+        return handleExternalNodesCallbackRequest(request, env);
+    }
 
     // [新增] 数据存储迁移接口 (KV -> D1)
     if (path === '/migrate_to_d1') {
@@ -486,9 +491,9 @@ export async function handleSubconverterTestRequest(request, env) {
 
     let requestData;
     try {
-        requestData = await request.json();
+        requestData = await readJsonWithLimit(request, JSON_BODY_LIMITS.normal);
     } catch (e) {
-        return createErrorResponse('Invalid JSON format', 400);
+        return createErrorResponse(e.status === 413 ? e.message : 'Invalid JSON format', e.status || 400);
     }
 
     const { backend, target = 'clash', timeout = 15000 } = requestData || {};
@@ -580,9 +585,9 @@ export async function handleExternalFetchRequest(request, env) {
 
     let requestData;
     try {
-        requestData = await request.json();
+        requestData = await readJsonWithLimit(request, JSON_BODY_LIMITS.normal);
     } catch (e) {
-        return createErrorResponse('Invalid JSON format', 400);
+        return createErrorResponse(e.status === 413 ? e.message : 'Invalid JSON format', e.status || 400);
     }
 
     const { url: externalUrl, timeout = 15000 } = requestData;
