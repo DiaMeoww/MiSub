@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { resolveNodeListWithCache } from '../../functions/modules/subscription/cache-manager.js';
 
 function createStorage(cachedData) {
@@ -8,6 +8,16 @@ function createStorage(cachedData) {
 }
 
 describe('resolveNodeListWithCache', () => {
+    beforeEach(() => {
+        globalThis.NODE_CACHE_STALE_TTL = 60 * 60 * 1000;
+        globalThis.NODE_CACHE_MAX_AGE = 60 * 60 * 1000;
+    });
+
+    afterEach(() => {
+        delete globalThis.NODE_CACHE_STALE_TTL;
+        delete globalThis.NODE_CACHE_MAX_AGE;
+    });
+
     it('returns a usable cache while refreshing it in the background', async () => {
         const refreshNodes = vi.fn().mockResolvedValue('trojan://password@1.2.3.5:443#JP-01');
         const context = { waitUntil: vi.fn() };

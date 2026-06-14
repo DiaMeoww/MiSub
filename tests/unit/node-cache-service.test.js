@@ -2,7 +2,7 @@
  * Node cache service tests
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
     getCache,
     setCache,
@@ -23,6 +23,16 @@ function createStorage(initialData = {}) {
 }
 
 describe('node-cache-service', () => {
+    beforeEach(() => {
+        globalThis.NODE_CACHE_STALE_TTL = 60 * 60 * 1000;
+        globalThis.NODE_CACHE_MAX_AGE = 60 * 60 * 1000;
+    });
+
+    afterEach(() => {
+        delete globalThis.NODE_CACHE_STALE_TTL;
+        delete globalThis.NODE_CACHE_MAX_AGE;
+    });
+
     it('returns miss when cache is empty', async () => {
         const storage = createStorage();
         const result = await getCache(storage, 'missing');

@@ -58,10 +58,11 @@ export async function getCache(storageAdapter, cacheKey) {
 
         const now = Date.now();
         const age = now - cached.timestamp;
+        const config = getCacheConfig(storageAdapter, cacheKey);
 
-        if (age < CACHE_CONFIG.STALE_TTL) {
+        if (age < config.STALE_TTL) {
             return { data: cached, status: 'stale' };
-        } else if (age < CACHE_CONFIG.MAX_AGE) {
+        } else if (age < config.MAX_AGE) {
             return { data: cached, status: 'expired' };
         } else {
             return { data: null, status: 'miss' };
@@ -100,7 +101,8 @@ export async function setCache(storageAdapter, cacheKey, nodes, sources = []) {
         };
 
         // 计算 TTL（秒），使用 MAX_AGE 作为过期时间
-        const ttlSeconds = Math.ceil(CACHE_CONFIG.MAX_AGE / 1000);
+        const config = getCacheConfig(storageAdapter, cacheKey);
+        const ttlSeconds = Math.ceil(config.MAX_AGE / 1000);
 
         // 尝试使用 KV 原生 TTL
         if (storageAdapter.kv && typeof storageAdapter.kv.put === 'function') {
@@ -162,8 +164,27 @@ export function createCacheHeaders(status, nodeCount) {
 /**
  * 获取缓存配置（供外部使用）
  */
-export function getCacheConfig() {
-    return { ...CACHE_CONFIG };
+export function getCacheConfig(storageAdapter, cacheKey = '') {
+    const isTemplate = typeof cacheKey === 'string' && cacheKey.startsWith('transform_template_');
+
+    if (isTemplate) {
+        const maxAgeSetting = storageAdapter?.env?.TEMPLATE_CACHE_MAX_AGE_SECONDS ?? globalThis.TEMPLATE_CACHE_MAX_AGE_SECONDS;
+        const maxAge = maxAgeSetting !== undefined ? Number(maxAgeSetting) * 1000 : 24 * 60 * 60 * 1000;
+        return {
+            ...CACHE_CONFIG,
+            STALE_TTL: 0,
+            MAX_AGE: maxAge
+        };
+    }
+
+    const staleTtl = storageAdapter?.env?.NODE_CACHE_STALE_TTL ?? globalThis.NODE_CACHE_STALE_TTL;
+    const maxAge = storageAdapter?.env?.NODE_CACHE_MAX_AGE ?? globalThis.NODE_CACHE_MAX_AGE;
+
+    return {
+        ...CACHE_CONFIG,
+        STALE_TTL: staleTtl !== undefined ? Number(staleTtl) : 0,
+        MAX_AGE: maxAge !== undefined ? Number(maxAge) : 0
+    };
 }
 
 /**
