@@ -30,6 +30,16 @@ export async function fetchSubscriptionNodes(url, subscriptionName, userAgent, c
 
         // 当配置了 fetchProxy 时，使用代理拉取订阅
         let requestUrl = url;
+        
+        // 强制绕过机场上游的强缓存 (如 Cloudflare Edge Cache)
+        try {
+            const parsedUrl = new URL(requestUrl);
+            parsedUrl.searchParams.set('_t', Date.now().toString());
+            requestUrl = parsedUrl.toString();
+        } catch (e) {
+            requestUrl += (requestUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
+        }
+
         if (fetchProxy && typeof fetchProxy === 'string' && fetchProxy.trim()) {
             requestUrl = buildFetchProxyUrl(fetchProxy, url, effectiveUserAgent);
         }

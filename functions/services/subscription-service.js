@@ -436,6 +436,15 @@ const prependGroupName = profilePrefixSettings?.prependGroupName ?? false;
             // [Fetch Proxy] 获取单点订阅专属拉取代理前缀
             assertPublicNetworkUrl(sub.url);
             let requestUrl = sub.url;
+            
+            try {
+                const parsedUrl = new URL(requestUrl);
+                parsedUrl.searchParams.set('_t', Date.now().toString());
+                requestUrl = parsedUrl.toString();
+            } catch (e) {
+                requestUrl += (requestUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
+            }
+
             if (sub.fetchProxy && typeof sub.fetchProxy === 'string' && sub.fetchProxy.trim()) {
                 requestUrl = buildFetchProxyUrl(sub.fetchProxy, sub.url, processedUserAgent);
             }
