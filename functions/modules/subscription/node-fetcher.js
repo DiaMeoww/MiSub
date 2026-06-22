@@ -38,6 +38,7 @@ export async function fetchSubscriptionNodes(url, subscriptionName, userAgent, c
         const response = await fetchWithRetry(requestUrl, {
             headers: { 'User-Agent': effectiveUserAgent },
             redirect: "follow",
+            cache: "no-store",
             ...(skipCertVerify ? { cf: { insecureSkipVerify: true } } : {})
         });
 
