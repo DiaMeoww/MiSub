@@ -437,12 +437,15 @@ const prependGroupName = profilePrefixSettings?.prependGroupName ?? false;
             assertPublicNetworkUrl(sub.url);
             let requestUrl = sub.url;
             
-            try {
-                const parsedUrl = new URL(requestUrl);
-                parsedUrl.searchParams.set('_t', Date.now().toString());
-                requestUrl = parsedUrl.toString();
-            } catch (e) {
-                requestUrl += (requestUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
+            // 只有开启保护性缓存节点时才加时间戳绕过强缓存 (如 Cloudflare Edge Cache)
+            if (cacheEnabled) {
+                try {
+                    const parsedUrl = new URL(requestUrl);
+                    parsedUrl.searchParams.set('_t', Date.now().toString());
+                    requestUrl = parsedUrl.toString();
+                } catch (e) {
+                    requestUrl += (requestUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
+                }
             }
 
             if (sub.fetchProxy && typeof sub.fetchProxy === 'string' && sub.fetchProxy.trim()) {
