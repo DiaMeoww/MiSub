@@ -453,7 +453,6 @@ const prependGroupName = profilePrefixSettings?.prependGroupName ?? false;
             const response = await fetchWithRetry(requestUrl, {
                 headers: requestHeaders,
                 redirect: "follow",
-                cache: "no-store",
                 ...(skipCertVerify ? {
                     cf: {
                         insecureSkipVerify: true,
