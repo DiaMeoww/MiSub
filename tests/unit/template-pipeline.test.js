@@ -7,6 +7,45 @@ import { getBuiltinTemplate } from '../../functions/modules/subscription/builtin
 const SS2022_V2RAY_PLUGIN_NODE = 'ss://MjAyMi1ibGFrZTMtYWVzLTI1Ni1nY206TldSak1UVmxNVFZtTWpnMU5HRTVaRGsxT1dJd1pUUm1ZbVJrTnpkaU5qTT0@cf.090227.xyz:8080?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bhost%3Dss.2227tsj.workers.dev%3Bpath%3D%2F%3Fenc%5C%3D2022-blake3-aes-256-gcm%3Bmux%3D0#2022-blake3-aes-256-gcm';
 
 describe('Template pipeline', () => {
+    it('uses current DNS server objects in sing-box templates', () => {
+        const rendered = renderSingboxFromIniTemplate(`
+[Proxy Group]
+节点选择 = select, Trojan WS, DIRECT
+
+[Rule]
+MATCH,节点选择
+        `, {
+            proxies: [{
+                name: 'Trojan WS', type: 'trojan', server: 'trojan.example.com', port: 443,
+                password: 'secret', network: 'ws', 'ws-opts': { path: '/ws', headers: { Host: 'edge.example.com' } }
+            }]
+        });
+        const parsed = JSON.parse(rendered);
+        const trojan = parsed.outbounds.find(outbound => outbound.tag === 'Trojan WS');
+
+        expect(parsed.dns.servers).toEqual(expect.arrayContaining([
+            expect.objectContaining({ type: 'udp', server: '223.5.5.5', server_port: 53 })
+        ]));
+        expect(parsed.dns.servers.every(server => !Object.hasOwn(server, 'address'))).toBe(true);
+        expect(trojan).toBeDefined();
+    });
+
+    it('uses SIP003 v2ray-plugin fields instead of an invalid Shadowsocks transport', () => {
+        const rendered = renderSingboxFromIniTemplate(`
+[Proxy Group]
+节点选择 = select, SS2022, DIRECT
+
+[Rule]
+MATCH,节点选择
+        `, { nodeList: SS2022_V2RAY_PLUGIN_NODE });
+        const parsed = JSON.parse(rendered);
+        const ssNode = parsed.outbounds.find(outbound => outbound.type === 'shadowsocks');
+
+        expect(ssNode?.plugin).toBe('v2ray-plugin');
+        expect(ssNode?.plugin_opts).toBe('mode=websocket;host=ss.2227tsj.workers.dev;path=/?enc=2022-blake3-aes-256-gcm');
+        expect(ssNode?.transport).toBeUndefined();
+    });
+
     it('should parse limited ini template into unified model', () => {
         const model = parseIniTemplate(`
 [Proxy Group]
@@ -365,9 +404,9 @@ custom_proxy_group=TestGroup`;
         expect(quanxRendered).not.toContain('over-tls=true');
 
         expect(ssOutbound?.method).toBe('2022-blake3-aes-256-gcm');
-        expect(ssOutbound?.transport?.type).toBe('ws');
-        expect(ssOutbound?.transport?.path).toBe('/?enc=2022-blake3-aes-256-gcm');
-        expect(ssOutbound?.transport?.headers?.Host).toBe('ss.2227tsj.workers.dev');
+        expect(ssOutbound?.plugin).toBe('v2ray-plugin');
+        expect(ssOutbound?.plugin_opts).toBe('mode=websocket;host=ss.2227tsj.workers.dev;path=/?enc=2022-blake3-aes-256-gcm');
+        expect(ssOutbound?.transport).toBeUndefined();
         expect(ssOutbound?.tls).toBeUndefined();
     });
 
