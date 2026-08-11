@@ -11,6 +11,7 @@ import { prependNodeName, addFlagEmoji, removeFlagEmoji, fixNodeUrlEncoding, san
 import { runOperatorChain } from '../utils/operator-runner.js';
 import { createTimeoutFetch } from '../modules/utils.js';
 import { assertPublicNetworkUrl } from '../modules/security-utils.js';
+import { isSuspiciousNodeCountDrop } from './node-cache-service.js';
 
 /**
  * 订阅获取配置常量
@@ -35,7 +36,8 @@ const REAL_PROXY_PROTOCOLS = [
     'tuic://',
     'anytls://',
     'socks5://',
-    'socks://'
+    'socks://',
+    'wireguard://'
 ];
 
 /**
@@ -114,8 +116,9 @@ async function writeSubscriptionNodeCache(storage, sub, nodes) {
 
 async function writeSubscriptionRuntimeInfo(storage, sub, runtimeInfo = {}) {
     if (!storage || !sub?.id) return false;
-    const { nodeCount, userInfo } = runtimeInfo;
+    const { nodeCount, userInfo, lastGoodNodeCount } = runtimeInfo;
     const hasUserInfo = Object.prototype.hasOwnProperty.call(runtimeInfo, 'userInfo');
+    const hasLastGoodNodeCount = Object.prototype.hasOwnProperty.call(runtimeInfo, 'lastGoodNodeCount');
 
     try {
         const applyUpdate = current => {
@@ -123,6 +126,9 @@ async function writeSubscriptionRuntimeInfo(storage, sub, runtimeInfo = {}) {
             return {
                 ...current,
                 nodeCount: Number.isFinite(nodeCount) ? nodeCount : current.nodeCount,
+                ...(hasLastGoodNodeCount && Number.isFinite(lastGoodNodeCount) && lastGoodNodeCount > 0
+                    ? { lastGoodNodeCount }
+                    : {}),
                 ...(hasUserInfo ? { userInfo } : {}),
                 lastError: null,
                 lastUpdate: new Date().toISOString()
@@ -492,8 +498,27 @@ const prependGroupName = profilePrefixSettings?.prependGroupName ?? false;
             validNodes = await applySubscriptionTransforms(validNodes, sub);
 
             const realNodes = validNodes.filter(isRealProxyNode);
+            const knownNodeCount = Math.max(
+                Number(sub?.lastGoodNodeCount) || 0,
+                Number(sub?.nodeCount) || 0
+            );
+            if (Number.isFinite(knownNodeCount) && isSuspiciousNodeCountDrop(knownNodeCount, realNodes.length)) {
+                const cachedNodes = await readCachedNodes();
+                console.warn(`[Subscription] Rejecting suspicious node-count drop for ${sub.id || sub.url} (${knownNodeCount} known -> ${realNodes.length} fetched)`);
+                if (cachedNodes.length > 0) return cachedNodes.join('\n');
+                // Do not write nodeCount=0 here: this response is suspicious,
+                // not evidence that the subscription has no usable nodes.
+                return '';
+            }
             if (cacheEnabled && realNodes.length === 0) {
                 return (await readCachedNodes()).join('\n');
+            }
+            if (cacheEnabled) {
+                const cachedNodes = await readCachedNodes();
+                if (isSuspiciousNodeCountDrop(cachedNodes.length, realNodes.length)) {
+                    console.warn(`[SubscriptionCache] Refusing suspicious node-count drop for ${sub.id || sub.url} (${cachedNodes.length} -> ${realNodes.length})`);
+                    return cachedNodes.join('\n');
+                }
             }
             if (!cacheEnabled && realNodes.length === 0) {
                 recordEmptyRuntimeInfo();
@@ -508,7 +533,8 @@ const prependGroupName = profilePrefixSettings?.prependGroupName ?? false;
                 const userInfo = parseSubscriptionUserInfoHeader(response.headers.get('subscription-userinfo'));
                 const runtimeInfo = {
                     nodeCount: realNodes.length,
-                    userInfo
+                    userInfo,
+                    ...(realNodes.length >= 10 ? { lastGoodNodeCount: realNodes.length } : {})
                 };
                 recordCurrentRequestRuntimeInfo(context, sub, runtimeInfo);
                 scheduleSubscriptionRuntimeInfoUpdate(context, storage, sub, runtimeInfo);

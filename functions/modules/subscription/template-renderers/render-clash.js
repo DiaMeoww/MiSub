@@ -160,21 +160,85 @@ export function renderClashFromTemplateModel(model) {
 
     const config = {
         'mixed-port': 7890,
+        'socks-port': 7891,
         'allow-lan': true,
+        'bind-address': '*',
+        'ipv6': true,
         'mode': 'rule',
         'log-level': 'info',
         'external-controller': ':9090',
         'dns': {
             'enable': true,
+            'prefer-h3': false,
+            'use-hosts': true,
+            'use-system-hosts': true,
+            'respect-rules': true,
             'listen': '0.0.0.0:1053',
-            'default-nameserver': ['223.5.5.5', '1.1.1.1'],
+            'ipv6': true,
+            'default-nameserver': ['223.5.5.5','119.29.29.29'],
             'enhanced-mode': 'fake-ip',
             'fake-ip-range': '198.18.0.1/16',
-            'fake-ip-filter': ['*.lan', '*.localhost'],
-            'nameserver': [
+            'fake-ip-filter': [
+                '*.lan',
+                '*.edu.cn',
+                'localhost.ptlogin2.qq.com',
+                'dns.msftncsi.com',
+                'www.msftncsi.com',
+                'www.msftconnecttest.com',
+                '+.lan',
+                '+.invalid.*',
+                '+.localhost',
+                '+.local.*',
+                '+.time.*',
+                '+.ntp.*',
+                '+.time.edu.cn',
+                '+.ntp.org.cn',
+                '+.pool.ntp.org',
+                '+.qpic.cn',
+                'geosite:private',
+                'geosite:connectivity-check'
+            ],
+            'nameserver-policy': {
+                'geosite:cn,private': 'https://223.5.5.5/dns-query',
+                'geosite:google@cn,geolocation-!cn': 'https://1.0.0.1/dns-query'
+            },
+            'nameserver': ['https://dns.alidns.com/dns-query','https://sm2.doh.pub/dns-query'],
+            'proxy-server-nameserver': [
                 'https://dns.alidns.com/dns-query',
-                'https://doh.pub/dns-query'
-            ]
+                'https://sm2.doh.pub/dns-query'
+            ],
+            'fallback': [
+                'https://1.0.0.1/dns-query',
+                'https://1.1.1.1/dns-query',
+                'https://8.8.8.8/dns-query',
+                'https://208.67.222.222/dns-query',
+                'https://9.9.9.9/dns-query'
+            ],
+            'fallback-filter': {
+                'geoip': true,
+                'geoip-code': 'CN',
+                'geosite': [
+                    'gfw'
+                ],
+                'ipcidr': [
+                    '240.0.0.0/4'
+                ],
+                'domain': [
+                    '+.gstatic.com',
+                    '+.google.cn',
+                    '+.google.com',
+                    '+.googleapis.cn',
+                    '+.facebook.com',
+                    '+.youtube.com',
+                    '+.netflix.com',
+                    '+.twitter.com',
+                    '+.x.com',
+                    '+.exhentai.org',
+                    '+.e-hentai.org',
+                    '+.hath.network',
+                    '+.twimg.com'
+                ]
+            }
         },
         'proxies': normalizedModel.proxies,
         'proxy-groups': normalizedModel.groups

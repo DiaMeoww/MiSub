@@ -305,12 +305,14 @@ HTTP 订阅源定义为 URL 以 `http` 开头的订阅项。
 8. 应用全局 include/exclude。
 9. 执行 YAML 安全净化 `sanitizeNodeForYaml()`。
 10. 根据配置补齐 flag emoji。
-11. 如果存在流量剩余伪节点或过期伪节点，将其插入最前。
+11. 如果存在流量剩余、到期时间或过期伪节点，将其插入最前。
 
-流量剩余伪节点：
+流量与到期时间伪节点：
 
 - 当未过期、`config.enableTrafficNode !== false` 且目标订阅源有有效 `userInfo.total` 时生成。
-- 名称格式：`流量剩余 ≫ {formatBytes(remaining)}`。
+- 剩余流量名称格式：`流量剩余 ≫ {formatBytes(remaining)}`。
+- 到期时间优先使用订阅组 `expiresAt`；未设置时按 `mergeExpireStrategy` 合并订阅源的 `userInfo.expire`。
+- 到期时间名称格式：`到期时间 ≫ YYYY-MM-DD`（Asia/Shanghai 日期）。
 
 ## 12. 输出分支
 

@@ -13,6 +13,60 @@ export function tgEscape(text) {
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+const IP_GEOLOCATION_PROVIDERS = [
+    {
+        name: 'ipwho.is',
+        buildUrl: ip => `https://ipwho.is/${encodeURIComponent(ip)}`,
+        parse: data => data?.success ? {
+            country: data.country,
+            city: data.city,
+            isp: data.connection?.org || data.connection?.isp,
+            asn: data.connection?.asn
+        } : null
+    },
+    {
+        name: 'ipapi.co',
+        buildUrl: ip => `https://ipapi.co/${encodeURIComponent(ip)}/json/`,
+        parse: data => data?.error ? null : {
+            country: data.country_name || data.country,
+            city: data.city,
+            isp: data.org || data.network,
+            asn: data.asn
+        }
+    },
+    {
+        name: 'ipinfo.io',
+        buildUrl: ip => `https://ipinfo.io/${encodeURIComponent(ip)}/json`,
+        parse: data => data?.bogon || data?.error ? null : {
+            country: data.country,
+            city: data.city,
+            isp: data.org,
+            asn: data.asn || String(data.org || '').match(/^AS\d+/)?.[0]
+        }
+    }
+];
+
+function hasGeolocationValue(info) {
+    return info && Object.values(info).some(value => value !== undefined && value !== null && String(value).trim() !== '');
+}
+
+async function fetchIpGeolocation(clientIp) {
+    if (!clientIp || clientIp === 'N/A' || clientIp === 'Unknown' || !/^(?:\d{1,3}\.){3}\d{1,3}$|^[0-9a-f:]+$/i.test(clientIp)) return null;
+
+    for (const provider of IP_GEOLOCATION_PROVIDERS) {
+        try {
+            const response = await fetch(provider.buildUrl(clientIp), { cf: { timeout: 3000 } });
+            if (!response.ok) continue;
+            const info = provider.parse(await response.json());
+            if (hasGeolocationValue(info)) return info;
+        } catch (error) {
+            console.debug(`[NotificationService] ${provider.name} geolocation failed:`, error);
+        }
+    }
+
+    return null;
+}
+
 /**
  * 发送基本的Telegram通知
  * @param {Object} settings - 设置对象
@@ -70,24 +124,16 @@ export async function sendEnhancedTgNotification(settings, type, clientIp, addit
 
     let locationInfo = '';
 
-    // 尝试获取IP地理位置信息 (使用 HTTPS 接口)
-    try {
-        const response = await fetch(`https://ipwho.is/${clientIp}`, {
-            cf: { timeout: 3000 }
-        });
-
-        if (response.ok) {
-            const ipInfo = await response.json();
-            if (ipInfo.success) {
-                locationInfo = `
+    const ipInfo = await fetchIpGeolocation(clientIp);
+    if (ipInfo) {
+        const asn = ipInfo.asn
+            ? (String(ipInfo.asn).startsWith('AS') ? ipInfo.asn : `AS${ipInfo.asn}`)
+            : 'N/A';
+        locationInfo = `
 <b>国家:</b> <code>${tgEscape(ipInfo.country || 'N/A')}</code>
 <b>城市:</b> <code>${tgEscape(ipInfo.city || 'N/A')}</code>
-<b>ISP:</b> <code>${tgEscape(ipInfo.connection?.org || ipInfo.connection?.isp || 'N/A')}</code>
-<b>ASN:</b> <code>${tgEscape(ipInfo.connection?.asn ? 'AS' + ipInfo.connection.asn : 'N/A')}</code>`;
-            }
-        }
-    } catch (error) {
-        console.debug('[NotificationService] Failed to fetch IP geolocation:', error);
+<b>ISP:</b> <code>${tgEscape(ipInfo.isp || 'N/A')}</code>
+<b>ASN:</b> <code>${tgEscape(asn)}</code>`;
     }
 
     // 构建完整消息

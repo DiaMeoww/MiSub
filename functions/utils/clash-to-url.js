@@ -278,9 +278,29 @@ export function convertClashProxyToUrl(proxy) {
             if (!proxy['private-key'] || !proxy.server || !proxy.port) return null;
             const params = new URLSearchParams();
             if (proxy['public-key'] || proxy.publicKey) params.set('publickey', proxy['public-key'] || proxy.publicKey);
-            if (proxy.ip || proxy['local-address']) {
-                const addr = Array.isArray(proxy.ip || proxy['local-address']) ? (proxy.ip || proxy['local-address']).join(',') : (proxy.ip || proxy['local-address']);
-                params.set('address', addr);
+            // if (proxy.ip || proxy['local-address']) {
+            //     const addr = Array.isArray(proxy.ip || proxy['local-address']) ? (proxy.ip || proxy['local-address']).join(',') : (proxy.ip || proxy['local-address']);
+            //     params.set('address', addr);
+            // }
+            // IPv6 Support
+            const addresses = [];
+            const ipv4 = proxy.ip || proxy['local-address'];
+            if (ipv4) {
+                if (Array.isArray(ipv4)) {
+                    addresses.push(...ipv4.filter(Boolean));
+                } else {
+                    addresses.push(ipv4);
+                }
+            }
+            if (proxy.ipv6) {
+                if (Array.isArray(proxy.ipv6)) {
+                    addresses.push(...proxy.ipv6.filter(Boolean));
+                } else {
+                    addresses.push(proxy.ipv6);
+                }
+            }
+            if (addresses.length > 0) {
+                params.set('address', [...new Set(addresses)].join(','));
             }
             if (proxy['allowed-ips'] || proxy.allowedIPs) {
                 const ips = Array.isArray(proxy['allowed-ips'] || proxy.allowedIPs) ? (proxy['allowed-ips'] || proxy.allowedIPs).join(',') : (proxy['allowed-ips'] || proxy.allowedIPs);
