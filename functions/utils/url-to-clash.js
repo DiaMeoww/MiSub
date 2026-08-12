@@ -666,7 +666,9 @@ function parseHysteria2Url(url) {
             }
         }
 
-        if (params.get('ports')) proxy.ports = params.get('ports');
+        if (params.get('ports') || params.get('mport')) {
+            proxy.ports = params.get('ports') || params.get('mport');
+        }
         if (params.get('up')) proxy.up = params.get('up');
         if (params.get('down')) proxy.down = params.get('down');
         const fastOpen = params.get('fast_open') || params.get('fast-open');
