@@ -129,6 +129,7 @@ prependGroupName: false
         }
     },
     // 自定义公开页
+    customDnsOverride: '',
     customPage: {
         enabled: false,
         type: 'html',

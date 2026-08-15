@@ -181,7 +181,8 @@ export function parseIniTemplate(templateText, options = {}) {
             managedConfigUrl: options.managedConfigUrl || '',
             interval: options.interval || 86400,
             skipCertVerify: Boolean(options.skipCertVerify),
-            enableUdp: Boolean(options.enableUdp)
+            enableUdp: Boolean(options.enableUdp),
+            customDnsOverride: options.customDnsOverride || ''
         }
     });
 }

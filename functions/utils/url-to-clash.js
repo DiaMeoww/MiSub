@@ -133,21 +133,119 @@ function parseVlessUrl(url) {
             }
         }
         
-        // xHTTP 配置 (Loon 3.0+ / Xray 1.8.7+)
-        if (network === 'xhttp') {
-            const xhttpOpts = {};
-            const path = params.get('xhttp-path') || params.get('path');
-            const host = params.get('xhttp-host') || params.get('host') || params.get('sni');
-            if (path) xhttpOpts.path = path;
-            if (host) {
-                xhttpOpts.host = host;
-                xhttpOpts.headers = { Host: host };
+       // xHTTP 配置
+if (network === 'xhttp') {
+    const xhttpOpts = {};
+
+    const path =
+        params.get('xhttp-path') ||
+        params.get('path');
+
+    const host =
+        params.get('xhttp-host') ||
+        params.get('host') ||
+        params.get('sni');
+
+    if (path) {
+        xhttpOpts.path = path;
+    }
+
+    if (host) {
+        xhttpOpts.host = host;
+
+        // 保留 MiSub 原有逻辑
+        xhttpOpts.headers = {
+            Host: host
+        };
+    }
+
+    // XHTTP mode
+    if (params.get('mode')) {
+        xhttpOpts.mode = params.get('mode');
+    }
+
+    /*
+     * Xray XHTTP 分享链接中的高级参数通常保存在 extra JSON 中：
+     *
+     * extra={
+     *   "xPaddingObfsMode": true,
+     *   "xPaddingMethod": "tokenish",
+     *   "xPaddingPlacement": "queryInHeader",
+     *   "xPaddingHeader": "...",
+     *   "xPaddingKey": "..."
+     * }
+     *
+     * 转换为 Mihomo / Clash Meta 的 xhttp-opts 字段。
+     */
+    const extraRaw = params.get('extra');
+
+    if (extraRaw) {
+        try {
+            const extra = JSON.parse(extraRaw);
+
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    extra,
+                    'xPaddingObfsMode'
+                )
+            ) {
+                xhttpOpts['x-padding-obfs-mode'] =
+                    extra.xPaddingObfsMode;
             }
-            if (params.get('mode')) xhttpOpts.mode = params.get('mode');
-            if (Object.keys(xhttpOpts).length > 0) {
-                proxy['xhttp-opts'] = xhttpOpts;
+
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    extra,
+                    'xPaddingMethod'
+                )
+            ) {
+                xhttpOpts['x-padding-method'] =
+                    extra.xPaddingMethod;
             }
+
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    extra,
+                    'xPaddingPlacement'
+                )
+            ) {
+                xhttpOpts['x-padding-placement'] =
+                    extra.xPaddingPlacement;
+            }
+
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    extra,
+                    'xPaddingHeader'
+                )
+            ) {
+                xhttpOpts['x-padding-header'] =
+                    extra.xPaddingHeader;
+            }
+
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    extra,
+                    'xPaddingKey'
+                )
+            ) {
+                xhttpOpts['x-padding-key'] =
+                    extra.xPaddingKey;
+            }
+
+        } catch (e) {
+            // extra 非法时不能让整个订阅转换失败
+            console.warn(
+                '[MiSub] XHTTP extra 参数解析失败:',
+                e
+            );
         }
+    }
+
+    if (Object.keys(xhttpOpts).length > 0) {
+        proxy['xhttp-opts'] = xhttpOpts;
+    }
+}
 
         // gRPC 配置
         if (network === 'grpc') {

@@ -196,6 +196,58 @@ export function generateBuiltinClashConfig(nodeList, options = {}) {
         }
 
         // 基础配置
+        const defaultDns = {
+            'enable': true,
+            'ipv6': true,
+            'enhanced-mode': 'fake-ip',
+            'fake-ip-range': '198.18.0.1/16',
+            'fake-ip-filter': [
+                'geosite:private',
+                'geosite:category-ntp'
+            ],
+            'use-hosts': false,
+            'use-system-hosts': false,
+            'nameserver': [
+                'https://1.1.1.1/dns-query',
+                'https://8.8.8.8/dns-query'
+            ],
+            'proxy-server-nameserver': [
+                'https://223.5.5.5/dns-query',
+                'https://223.6.6.6/dns-query'
+            ],
+            'nameserver-policy': {
+                'geosite:cn': [
+                    'https://223.5.5.5/dns-query',
+                    'https://223.6.6.6/dns-query'
+                ]
+            },
+            'respect-rules': true
+        };
+
+        let dnsConfig = defaultDns;
+        const customDnsRaw = options.customDnsOverride || '';
+        if (customDnsRaw.trim()) {
+            try {
+                let parsed;
+                const trimmed = customDnsRaw.trim();
+                if (/^\{/.test(trimmed)) {
+                    parsed = JSON.parse(trimmed);
+                } else {
+                    parsed = yaml.load(trimmed);
+                }
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                    // 如果解析结果包含 dns 顶层键，取 dns 的值
+                    if (parsed.dns && typeof parsed.dns === 'object' && !Array.isArray(parsed.dns)) {
+                        dnsConfig = parsed.dns;
+                    } else {
+                        dnsConfig = parsed;
+                    }
+                }
+            } catch {
+                // 格式错误，保持使用默认 DNS
+            }
+        }
+
         const config = {
             'mixed-port': 7890,
             'allow-lan': true,
@@ -203,18 +255,7 @@ export function generateBuiltinClashConfig(nodeList, options = {}) {
             'log-level': 'info',
             'external-controller': ':9090',
 
-            'dns': {
-                'enable': true,
-                'listen': '0.0.0.0:1053',
-                'default-nameserver': ['223.5.5.5', '1.1.1.1'],
-                'enhanced-mode': 'fake-ip',
-                'fake-ip-range': '198.18.0.1/16',
-                'fake-ip-filter': ['*.lan', '*.localhost'],
-                'nameserver': [
-                    'https://dns.alidns.com/dns-query',
-                    'https://doh.pub/dns-query'
-                ]
-            },
+            'dns': dnsConfig,
 
             'proxies': publicProxies,
             'profile': {

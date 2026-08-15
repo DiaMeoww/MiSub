@@ -13,7 +13,66 @@ export function tgEscape(text) {
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function splitIpCnLocation(value) {
+    return String(value || '').trim().split(/\s+/).filter(Boolean);
+}
+
+function isLikelyCarrier(value) {
+    return /(?:移动|联通|电信|電信|广电|廣電|铁通|鐵通|教育网|教育網|宽带|寬帶|通信|通訊|网络|網絡|中华电信|中華電信|台湾大哥大|台灣大哥大|远传|遠傳|台湾之星|台灣之星|亚太电信|亞太電信)$/i.test(String(value || '').trim());
+}
+
+function parseIpCnHtml(html) {
+    const text = String(html || '');
+    const description = text.match(/<meta\s+name=["']description["']\s+content=["'][^"']*?归属地为[：:]\s*([^，,"'<]+?)(?:，|提供|["'])/i)?.[1]?.trim();
+    const tableLocation = text.match(/所在地理位置[\s\S]*?<td[^>]*>[\s\S]*?<span[^>]*>\s*([^<]+?)\s*<\/span>/i)?.[1]?.trim();
+    const tableParts = splitIpCnLocation(tableLocation);
+    const descriptionParts = splitIpCnLocation(description);
+
+    if (tableParts.length > 0) {
+        const result = {
+            country: tableParts[0],
+            city: tableParts.slice(1).join(' ')
+        };
+        const descriptionStartsWithTable = tableParts.every((part, index) => descriptionParts[index] === part);
+        const extraParts = descriptionStartsWithTable ? descriptionParts.slice(tableParts.length) : [];
+        const carrier = extraParts.at(-1);
+
+        if (isLikelyCarrier(carrier)) {
+            const extraPlaceParts = extraParts.slice(0, -1);
+            result.city = [...tableParts.slice(1), ...extraPlaceParts].join(' ');
+            result.isp = carrier;
+        }
+
+        return result;
+    }
+
+    if (descriptionParts.length === 0) return null;
+    const carrier = descriptionParts.at(-1);
+    const hasCarrier = isLikelyCarrier(carrier);
+    const placeParts = hasCarrier ? descriptionParts.slice(0, -1) : descriptionParts;
+    return {
+        country: placeParts[0],
+        city: placeParts.slice(1).join(' '),
+        isp: hasCarrier ? carrier : undefined
+    };
+}
+
 const IP_GEOLOCATION_PROVIDERS = [
+    {
+        name: 'ip.cn',
+        supports: ip => /^(?:\d{1,3}\.){3}\d{1,3}$/.test(ip),
+        buildUrl: ip => `https://ip.cn/ip/${encodeURIComponent(ip)}.html`,
+        requestInit: {
+            redirect: 'manual',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Referer': 'https://ip.cn/'
+            }
+        },
+        read: response => response.text(),
+        parse: parseIpCnHtml
+    },
     {
         name: 'ipwho.is',
         buildUrl: ip => `https://ipwho.is/${encodeURIComponent(ip)}`,
@@ -50,21 +109,38 @@ function hasGeolocationValue(info) {
     return info && Object.values(info).some(value => value !== undefined && value !== null && String(value).trim() !== '');
 }
 
+function mergeMissingGeolocationValues(current = {}, incoming = {}) {
+    const merged = { ...current };
+    for (const key of ['country', 'city', 'isp', 'asn']) {
+        if (!merged[key] && incoming?.[key]) merged[key] = incoming[key];
+    }
+    return merged;
+}
+
 async function fetchIpGeolocation(clientIp) {
     if (!clientIp || clientIp === 'N/A' || clientIp === 'Unknown' || !/^(?:\d{1,3}\.){3}\d{1,3}$|^[0-9a-f:]+$/i.test(clientIp)) return null;
 
+    let result = {};
     for (const provider of IP_GEOLOCATION_PROVIDERS) {
+        if (provider.supports && !provider.supports(clientIp)) continue;
         try {
-            const response = await fetch(provider.buildUrl(clientIp), { cf: { timeout: 3000 } });
+            const response = await fetch(provider.buildUrl(clientIp), {
+                cf: { timeout: 3000 },
+                ...(provider.requestInit || {})
+            });
             if (!response.ok) continue;
-            const info = provider.parse(await response.json());
-            if (hasGeolocationValue(info)) return info;
+            const body = provider.read ? await provider.read(response) : await response.json();
+            const info = provider.parse(body);
+            if (!hasGeolocationValue(info)) continue;
+
+            result = mergeMissingGeolocationValues(result, info);
+            if (result.country && result.city && result.isp && result.asn) return result;
         } catch (error) {
             console.debug(`[NotificationService] ${provider.name} geolocation failed:`, error);
         }
     }
 
-    return null;
+    return hasGeolocationValue(result) ? result : null;
 }
 
 /**
