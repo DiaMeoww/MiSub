@@ -162,7 +162,6 @@ export function renderClashFromTemplateModel(model) {
     const config = {
         'mixed-port': 7890,
         'allow-lan': true,
-        'bind-address': '127.0.0.1',
         'ipv6': false,
         'mode': 'rule',
         'log-level': 'info',
