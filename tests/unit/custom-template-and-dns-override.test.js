@@ -47,7 +47,7 @@ const userCustomDnsYaml = [
 ].join('\n');
 
 describe('Custom template isolation & Custom DNS override', () => {
-    it('does not inject AI groups or AI domain rules in custom template mode (ruleLevel: none)', () => {
+    it('does not inject AI groups or AI domain rules in custom template mode, but keeps default DNS proxy group when no custom DNS is configured', () => {
         const output = renderClashFromIniTemplate(customIniTemplate, {
             nodeList: sampleNodeList,
             ruleLevel: 'none',
@@ -59,8 +59,8 @@ describe('Custom template isolation & Custom DNS override', () => {
         const aiGroups = groupNames.filter(name => name.includes('AI') || name.includes('OpenAI') || name.includes('Claude'));
         expect(aiGroups).toEqual([]);
 
-        const dnsExitGroup = groupNames.find(name => name === DNS_PROXY_GROUP || name === 'DNS 出口');
-        expect(dnsExitGroup).toBeUndefined();
+        // 未配置自定义 DNS，采用作者默认 Safe DNS 时，保留 DNS 出口策略组以供 nameserver 引用
+        expect(groupNames).toContain(DNS_PROXY_GROUP);
 
         const rules = parsed.rules || [];
         const hasAiRule = rules.some(rule => rule.includes('openai.com') || rule.includes('claude.ai') || rule.includes('🤖'));

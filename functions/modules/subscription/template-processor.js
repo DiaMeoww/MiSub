@@ -309,9 +309,10 @@ export function applySmartModelOptimizations(model) {
     resolveGroupFilters(model);
 
     // 2. DNS 出口策略组注入：
-    // 当用户未配置自定义 DNS 覆写，且非纯自定义模板模式（启用内置分流）时才注入
+    // 只要没用自定义 DNS（使用作者默认 Safe DNS），就保证注入 DNS 出口策略组；
+    // 只要自定义配置了 DNS，就不跟随注入 DNS 出口策略组。
     const hasCustomDns = Boolean(model.settings?.customDnsOverride && String(model.settings.customDnsOverride).trim());
-    if (!hasCustomDns && !isCustomOrNone) {
+    if (!hasCustomDns) {
         ensureDnsProxyGroup(model);
     }
 
