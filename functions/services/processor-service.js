@@ -12,6 +12,7 @@ import { resolveRuleTemplateSource } from '../modules/rule-template-handler.js';
 import { base64EncodeUtf8 } from '../modules/utils.js';
 import yaml from 'js-yaml';
 import { urlsToClashProxies } from '../utils/url-to-clash.js';
+import { resolveSafeDnsConfig } from '../modules/subscription/safe-dns.js';
 
 function getTemplateExtension(templateUrl) {
     const raw = typeof templateUrl === 'string' ? templateUrl.trim() : '';
@@ -83,6 +84,14 @@ export function renderClashYamlProfileTemplate(templateText, nodeList, options =
 
     return yaml.dump({
         ...config,
+        'allow-lan': false,
+        'bind-address': '127.0.0.1',
+        'ipv6': false,
+        'external-controller': '127.0.0.1:9090',
+        dns: resolveSafeDnsConfig(config.dns, {
+            mode: options.dnsMode,
+            proxyGroup: '🌐 DNS 出口'
+        }),
         proxies
     }, {
         indent: 2,
@@ -189,7 +198,9 @@ export class ProcessorService {
                     managedConfigUrl,
                     skipCertVerify: builtinOptions.skipCertVerify,
                     enableUdp: builtinOptions.enableUdp,
-                    isMeta: builtinOptions.isMeta
+                    isMeta: builtinOptions.isMeta,
+                    customDnsOverride: builtinOptions.customDnsOverride || '',
+                    dnsMode: builtinOptions.dnsMode || 'clean'
                 };
 
                 switch (targetFormat) {

@@ -7,6 +7,7 @@
 import { urlsToClashProxies } from '../../utils/url-to-clash.js';
 import { getUniqueName } from './name-utils.js';
 import { isMetaCore } from './user-agent-utils.js';
+import { DNS_PROXY_GROUP, resolveSafeDnsConfig } from './safe-dns.js';
 import {
     POLICY_GROUPS,
     RULE_SETS,
@@ -174,7 +175,7 @@ export function generateBuiltinClashConfig(nodeList, options = {}) {
 
         // 生成策略组并执行引用修剪
         const policyGroupsFactory = POLICY_GROUPS[levelKey] || POLICY_GROUPS.STD;
-        let proxyGroups = policyGroupsFactory(proxies);
+        let proxyGroups = policyGroupsFactory(proxies, options);
         proxyGroups = pruneProxyGroups(proxyGroups, proxies);
         
         // 提取远程 Provider 定义。Hiddify 4.x 的 Clash 转 sing-box 解析对 rule-providers 兼容性较差，
@@ -195,26 +196,22 @@ export function generateBuiltinClashConfig(nodeList, options = {}) {
             proxyGroups = relayConfig.proxyGroups;
         }
 
-        // 基础配置
+        // 基础配置：安全默认值，不再依赖 KV 覆盖才能避免 DNS 递归。
+        const dnsConfig = resolveSafeDnsConfig(options.customDnsOverride || '', {
+            mode: options.dnsMode,
+            proxyGroup: DNS_PROXY_GROUP
+        });
+
         const config = {
             'mixed-port': 7890,
-            'allow-lan': true,
+            'allow-lan': false,
+            'bind-address': '127.0.0.1',
+            'ipv6': false,
             'mode': 'rule',
             'log-level': 'info',
-            'external-controller': ':9090',
+            'external-controller': '127.0.0.1:9090',
 
-            'dns': {
-                'enable': true,
-                'listen': '0.0.0.0:1053',
-                'default-nameserver': ['223.5.5.5', '1.1.1.1'],
-                'enhanced-mode': 'fake-ip',
-                'fake-ip-range': '198.18.0.1/16',
-                'fake-ip-filter': ['*.lan', '*.localhost'],
-                'nameserver': [
-                    'https://dns.alidns.com/dns-query',
-                    'https://doh.pub/dns-query'
-                ]
-            },
+            'dns': dnsConfig,
 
             'proxies': publicProxies,
             'profile': {

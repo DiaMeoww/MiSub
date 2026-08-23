@@ -20,6 +20,34 @@ describe('Built-in Sing-box generator', () => {
         expect(parsed.route.final).toContain('节点选择');
     });
 
+    it('should include a tun inbound for sing-box Android client deployment', () => {
+        const result = generateBuiltinSingboxConfig('trojan://password@1.2.3.4:443#AndroidNode');
+        const parsed = JSON.parse(result);
+
+        expect(parsed.inbounds).toEqual([
+            expect.objectContaining({
+                type: 'tun',
+                tag: 'tun-in',
+                auto_route: true,
+                strict_route: true,
+                stack: 'mixed'
+            })
+        ]);
+        expect(parsed.inbounds[0].address).toEqual(expect.arrayContaining(['172.19.0.1/30']));
+        expect(parsed.route.auto_detect_interface).toBe(true);
+        expect(parsed.route.default_domain_resolver).toBe('dns-cn-1');
+        expect(parsed.dns.rules).toEqual(expect.arrayContaining([
+            expect.objectContaining({ action: 'route', server: 'dns-cn-1' })
+        ]));
+        expect(parsed.dns.rules).toEqual(expect.arrayContaining([
+            expect.objectContaining({ rule_set: ['geosite-cn'], action: 'route', server: 'dns-cn-1' })
+        ]));
+        expect(parsed.route.rule_set).toEqual(expect.arrayContaining([
+            expect.objectContaining({ tag: 'geosite-cn', type: 'remote', format: 'binary' })
+        ]));
+        expect(parsed.outbounds.find(outbound => outbound.tag === '🌐 DNS 出口')?.outbounds).not.toContain('DIRECT');
+    });
+
     it('should enable TLS for https and socks5-tls', () => {
         const result = generateBuiltinSingboxConfig([
             'https://user:pass@1.2.3.4:443#HttpsNode',
@@ -34,17 +62,33 @@ describe('Built-in Sing-box generator', () => {
         expect(socksNode?.tls?.enabled).toBe(true);
     });
 
-    it('should map trojan websocket transport', () => {
+    it('uses split DNS server objects while preserving Trojan websocket transport', () => {
         const result = generateBuiltinSingboxConfig('trojan://password@1.2.3.4:443?type=ws&path=%2Fws&host=example.com&sni=example.org#TrojanWS');
         const parsed = JSON.parse(result);
         const trojanNode = parsed.outbounds.find(outbound => outbound.tag.endsWith('TrojanWS'));
 
+        expect(parsed.dns.servers).toEqual(expect.arrayContaining([
+            expect.objectContaining({ type: 'udp', server: '223.5.5.5', server_port: 53 }),
+            expect.objectContaining({ type: 'udp', server: '8.8.8.8', detour: '🌐 DNS 出口' })
+        ]));
+        expect(parsed.dns.servers.every(server => !Object.hasOwn(server, 'address'))).toBe(true);
         expect(trojanNode?.type).toBe('trojan');
         expect(trojanNode?.tls?.enabled).toBe(true);
         expect(trojanNode?.tls?.server_name).toBe('example.org');
         expect(trojanNode?.transport?.type).toBe('ws');
         expect(trojanNode?.transport?.path).toBe('/ws');
         expect(trojanNode?.transport?.headers?.Host).toBe('example.com');
+    });
+
+    it('enables encrypted foreign DNS only in polluted mode', () => {
+        const parsed = JSON.parse(generateBuiltinSingboxConfig('trojan://password@1.2.3.4:443#Trojan', {
+            dnsMode: 'polluted'
+        }));
+        expect(parsed.dns.servers).toEqual(expect.arrayContaining([
+            expect.objectContaining({ type: 'https', server: '8.8.8.8', path: '/dns-query', detour: '🌐 DNS 出口' })
+        ]));
+        expect(parsed.dns.final).toBe('dns-foreign-1');
+        expect(parsed.dns.rules[0].rule_set).toEqual(['geosite-cn']);
     });
 
     it('should map anytls outbound', () => {
@@ -61,15 +105,15 @@ describe('Built-in Sing-box generator', () => {
         expect(anytlsNode?.tls?.insecure).toBe(true);
     });
 
-    it('should map SS2022 v2ray-plugin websocket without forcing TLS', () => {
+    it('should map SS2022 v2ray-plugin websocket with SIP003 fields instead of an invalid transport', () => {
         const result = generateBuiltinSingboxConfig(SS2022_V2RAY_PLUGIN_NODE);
         const parsed = JSON.parse(result);
         const ssNode = parsed.outbounds.find(outbound => outbound.type === 'shadowsocks');
 
         expect(ssNode?.method).toBe('2022-blake3-aes-256-gcm');
-        expect(ssNode?.transport?.type).toBe('ws');
-        expect(ssNode?.transport?.path).toBe('/?enc=2022-blake3-aes-256-gcm');
-        expect(ssNode?.transport?.headers?.Host).toBe('ss.2227tsj.workers.dev');
+        expect(ssNode?.plugin).toBe('v2ray-plugin');
+        expect(ssNode?.plugin_opts).toBe('mode=websocket;host=ss.2227tsj.workers.dev;path=/?enc=2022-blake3-aes-256-gcm');
+        expect(ssNode?.transport).toBeUndefined();
         expect(ssNode?.tls).toBeUndefined();
     });
 
@@ -86,5 +130,28 @@ describe('Built-in Sing-box generator', () => {
         expect(tuicNode?.heartbeat).toBe('10s');
         expect(tuicNode?.tls?.server_name).toBe('tuic.example.com');
         expect(tuicNode?.tls?.insecure).toBe(true);
+    });
+
+    it('should use rule_set for geoip instead of deprecated geoip field (sing-box 1.12+)', () => {
+        const result = generateBuiltinSingboxConfig('trojan://password@1.2.3.4:443#TestNode');
+        const parsed = JSON.parse(result);
+
+        // No rule should have a direct geoip field
+        const geoipRules = parsed.route.rules.filter(r => r.geoip !== undefined);
+        expect(geoipRules).toHaveLength(0);
+
+        // Should have a geoip-cn rule_set reference instead
+        const geoipRuleSet = parsed.route.rules.filter(r =>
+            Array.isArray(r.rule_set) && r.rule_set.includes('geoip-cn')
+        );
+        expect(geoipRuleSet).toHaveLength(1);
+        expect(geoipRuleSet[0].outbound).toBe('DIRECT');
+
+        // Should have geoip-cn in the rule_set definitions
+        const geoipProvider = parsed.route.rule_set.find(rs => rs.tag === 'geoip-cn');
+        expect(geoipProvider).toBeDefined();
+        expect(geoipProvider.type).toBe('remote');
+        expect(geoipProvider.url).toContain('sing-geoip');
+        expect(geoipProvider.format).toBe('binary');
     });
 });

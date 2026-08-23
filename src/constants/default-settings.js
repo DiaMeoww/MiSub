@@ -9,6 +9,7 @@ export const DEFAULT_SETTINGS = {
     FileName: 'MiSub',
     mytoken: 'auto',
     profileToken: 'profiles',
+    defaultLocale: 'zh-CN',
     transformConfigMode: 'builtin',
     transformConfig: '',
     ruleLevel: 'std',
@@ -73,6 +74,7 @@ prependGroupName: false
         }
     },
     nodeTransformPresets: [],
+    regionOverrides: [],
     // 公告设置
     announcement: {
         enabled: true,            // 是否启用公告
@@ -104,6 +106,15 @@ prependGroupName: false
         lastBackupMessage: '',
         lastBackupFile: ''
     },
+    externalApi: {
+        enabled: false,
+        tokens: [
+            {
+                name: 'default',
+                token: ''
+            }
+        ]
+    },
     // 订阅转换设置
     subconverter: {
         engineMode: 'builtin',
@@ -118,6 +129,7 @@ prependGroupName: false
         }
     },
     // 自定义公开页
+    customDnsOverride: '',
     customPage: {
         enabled: false,
         type: 'html',

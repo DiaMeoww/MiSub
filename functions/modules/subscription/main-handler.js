@@ -4,8 +4,7 @@ import { generateCombinedNodeList } from '../../services/subscription-service.js
 import { sendEnhancedTgNotification, tgEscape } from '../notifications.js';
 import { KV_KEY_SUBS, KV_KEY_PROFILES, KV_KEY_SETTINGS, DEFAULT_SETTINGS as defaultSettings, DEFAULT_SUBCONVERTER_BACKEND } from '../config.js';
 import { createDisguiseResponse } from '../disguise-page.js';
-import { generateCacheKey, setCache } from '../../services/node-cache-service.js';
-import { countNodeLines, prepareExternalNodesCallback, shouldUseExternalNodesCallback } from '../../services/external-nodes-callback-service.js';
+import { generateCacheKey, setCache, isSuspiciousNodeCountDrop, isLikelyPartialAggregateNodeList } from '../../services/node-cache-service.js';
 import { resolveRequestContext } from './request-context.js';
 import { resolveNodeListWithCache } from './cache-manager.js';
 import { ProcessorService } from '../../services/processor-service.js';
@@ -105,9 +104,9 @@ function getCurrentRequestUserInfo(context, sub) {
     return sub?.userInfo || null;
 }
 
-function buildUserInfoHeaderFromSubscriptions(context, subscriptions) {
+function mergeSubscriptionUserInfo(context, subscriptions) {
     const strategy = context?.config?.mergeExpireStrategy || 'max';
-    const totalUserInfo = subscriptions.reduce((acc, sub) => {
+    return subscriptions.reduce((acc, sub) => {
         const userInfo = sub?.enabled ? getCurrentRequestUserInfo(context, sub) : null;
         if (!userInfo) return acc;
 
@@ -136,17 +135,76 @@ function buildUserInfoHeaderFromSubscriptions(context, subscriptions) {
             expire: nextExpire
         };
     }, { upload: 0, download: 0, total: 0, expire: 0 });
+}
 
+function buildUserInfoHeaderFromSubscriptions(context, subscriptions, profileExpiresAt = '') {
+    const totalUserInfo = mergeSubscriptionUserInfo(context, subscriptions);
+
+    const profileExpireTimestamp = profileExpiresAt
+        ? Math.floor(new Date(profileExpiresAt).getTime() / 1000)
+        : 0;
     const safeUserInfo = {
         upload: isFinite(totalUserInfo.upload) ? totalUserInfo.upload : 0,
         download: isFinite(totalUserInfo.download) ? totalUserInfo.download : 0,
         total: isFinite(totalUserInfo.total) ? totalUserInfo.total : 0,
-        expire: isFinite(totalUserInfo.expire) ? totalUserInfo.expire : 0
+        expire: profileExpireTimestamp > 0
+            ? profileExpireTimestamp
+            : (isFinite(totalUserInfo.expire) ? totalUserInfo.expire : 0)
     };
 
     return safeUserInfo.total > 0
         ? `upload=${safeUserInfo.upload}; download=${safeUserInfo.download}; total=${safeUserInfo.total}; expire=${safeUserInfo.expire}`
         : null;
+}
+
+export function formatNotificationExpireTime(profileExpiresAt, mergedExpireTimestamp = 0, now = Date.now()) {
+    let date = profileExpiresAt ? new Date(profileExpiresAt) : null;
+    if (!date || Number.isNaN(date.getTime())) {
+        const timestamp = Number(mergedExpireTimestamp);
+        date = Number.isFinite(timestamp) && timestamp > 0
+            ? new Date(timestamp > 1e12 ? timestamp : timestamp * 1000)
+            : null;
+    }
+
+    if (!date || Number.isNaN(date.getTime())) return '未设置';
+    if (date.getTime() <= now) return '已到期';
+
+    return date.toLocaleString('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        hour12: false
+    });
+}
+
+function formatSubscriptionExpireTime(expireTimestamp) {
+    const timestamp = Number(expireTimestamp);
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return '';
+
+    const date = new Date(timestamp * 1000);
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).formatToParts(date);
+    const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+}
+
+function countSubscriptionNodes(nodeList, prependedContent = '') {
+    const lines = String(nodeList || '')
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(line => line && !line.startsWith('#'));
+    const prependedLines = String(prependedContent || '')
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    if (prependedLines.length > 0 && prependedLines.every((line, index) => lines[index] === line)) {
+        return Math.max(0, lines.length - prependedLines.length);
+    }
+
+    return lines.length;
 }
 
 export function resolveTemplateUrl(mode, value, fallbackUrl = '') {
@@ -262,20 +320,22 @@ export function buildExternalSubconverterUrl({
         if (k && v) externalUrl.searchParams.set(k, v);
     });
 
-    const normalizedNodeList = String(nodeList || '').trim();
-    if (normalizedNodeList) {
-        // 关键：第三方转换模式应接收 MiSub 已完成预处理后的节点列表。
-        // subconverter 对多个内联节点更稳定的分隔符是 `|`；保留换行会让部分后端只解析首行或直接报 No nodes were found。
-        const inlineNodeList = normalizedNodeList.split(/\r?\n+/).map(line => line.trim()).filter(Boolean).join('|');
-        externalUrl.searchParams.set('url', inlineNodeList);
-    } else if (requestUrl) {
-        // 兜底保留旧回调 URL 逻辑，避免异常空列表场景构造无效 converter 请求。
+    if (requestUrl) {
         const dataSourceUrl = new URL(requestUrl);
-        const paramsToClear = ['target', 'engine', 'builtin', 'clash', 'singbox', 'surge', 'loon', 'quanx', 'egern', 'base64', 'v2ray', 'trojan', 'list', 'include', 'exclude'];
+        const paramsToClear = [
+            'target', 'engine', 'builtin', 'clash', 'singbox', 'surge', 'loon', 'quanx', 'egern',
+            'base64', 'v2ray', 'trojan', 'nodes', 'list', 'backend', 'refresh', 'nocache', 'debug'
+        ];
         paramsToClear.forEach(p => dataSourceUrl.searchParams.delete(p));
-        dataSourceUrl.searchParams.set('target', 'nodes');
-        dataSourceUrl.searchParams.set('builtin', 'true');
+        dataSourceUrl.searchParams.set('base64', '');
+        dataSourceUrl.searchParams.set('callback_token', 'external');
         externalUrl.searchParams.set('url', dataSourceUrl.toString());
+    } else {
+        const normalizedNodeList = String(nodeList || '').trim();
+        if (normalizedNodeList) {
+            const inlineNodeList = normalizedNodeList.split(/\r?\n+/).map(line => line.trim()).filter(Boolean).join('|');
+            externalUrl.searchParams.set('url', inlineNodeList);
+        }
     }
 
     const effectiveOptions = { ...(globalSub.defaultOptions || {}), ...(profileSub.options || {}) };
@@ -350,10 +410,13 @@ export function resolveEffectiveEngine({
 }
 
 export function resolveBuiltinRequestOptions({ searchParams, userAgent = '' } = {}) {
+    const params = searchParams || new URLSearchParams('');
+    const dnsMode = params.get('dns-mode') || params.get('dnsMode') || '';
     return {
         userAgent,
-        searchParams: searchParams || new URLSearchParams(''),
-        hiddifyCompatible: isHiddifyAgent(userAgent)
+        searchParams: params,
+        hiddifyCompatible: isHiddifyAgent(userAgent),
+        dnsMode: dnsMode.toLowerCase() === 'polluted' ? 'polluted' : 'clean'
     };
 }
 
@@ -433,7 +496,7 @@ export async function handleMisubRequest(context) {
     let subName = config.FileName;
     let isProfileExpired = false; // Moved declaration here
 
-    const DEFAULT_EXPIRED_NODE = `trojan://00000000-0000-0000-0000-000000000000@127.0.0.1:443#${encodeURIComponent('您的订阅已失效')}`;
+    const DEFAULT_EXPIRED_NODE = '# MiSub: 您的订阅已失效';
 
     let currentProfile = null;
 
@@ -541,19 +604,37 @@ export async function handleMisubRequest(context) {
     if (isProfileExpired) { // Use the flag set earlier
         prependedContentForSubconverter = ''; // Expired node is now in targetMisubs
     } else {
-        // Otherwise, add traffic remaining info if applicable
-        const totalRemainingBytes = targetMisubs.reduce((acc, sub) => {
-            if (sub.enabled && sub.userInfo && sub.userInfo.total > 0) {
-                const used = (sub.userInfo.upload || 0) + (sub.userInfo.download || 0);
-                const remaining = sub.userInfo.total - used;
-                return acc + Math.max(0, remaining);
+        // Otherwise, add traffic and expiration info nodes if enabled.
+        if (config.enableTrafficNode !== false) {
+            const totalUserInfo = mergeSubscriptionUserInfo(context, targetMisubs);
+            const profileExpireTimestamp = currentProfile?.expiresAt
+                ? Math.floor(new Date(currentProfile.expiresAt).getTime() / 1000)
+                : 0;
+            const expireTimestamp = profileExpireTimestamp > 0
+                ? profileExpireTimestamp
+                : totalUserInfo.expire;
+            const virtualNodes = [];
+
+            const totalRemainingBytes = targetMisubs.reduce((acc, sub) => {
+                const userInfo = sub?.enabled ? getCurrentRequestUserInfo(context, sub) : null;
+                if (userInfo && userInfo.total > 0) {
+                    const used = (userInfo.upload || 0) + (userInfo.download || 0);
+                    return acc + Math.max(0, userInfo.total - used);
+                }
+                return acc;
+            }, 0);
+            if (totalRemainingBytes > 0) {
+                const fakeNodeName = `流量剩余 ≫ ${formatBytes(totalRemainingBytes)}`;
+                virtualNodes.push(`# MiSub: ${fakeNodeName}`);
             }
-            return acc;
-        }, 0);
-        if (config.enableTrafficNode !== false && totalRemainingBytes > 0) {
-            const formattedTraffic = formatBytes(totalRemainingBytes);
-            const fakeNodeName = `流量剩余 ≫ ${formattedTraffic}`;
-            prependedContentForSubconverter = `trojan://00000000-0000-0000-0000-000000000000@127.0.0.1:443#${encodeURIComponent(fakeNodeName)}`;
+
+            const expireText = formatSubscriptionExpireTime(expireTimestamp);
+            if (expireText) {
+                const fakeNodeName = `到期时间 ≫ ${expireText}`;
+                virtualNodes.push(`# MiSub: ${fakeNodeName}`);
+            }
+
+            prependedContentForSubconverter = virtualNodes.join('\n');
         }
     }
 
@@ -723,10 +804,32 @@ export async function handleMisubRequest(context) {
         // 如果没有 HTTP 订阅源（纯手动节点/过期订阅组），则始终写入缓存
         const stats = context.generationStats;
         if (!stats?.sourceCount || stats.upstreamSuccessCount > 0) {
-            await setCache(storageAdapter, cacheKey, freshNodes, sourceNames);
+            const cacheSaved = await setCache(storageAdapter, cacheKey, freshNodes, sourceNames);
+            const freshNodeCount = freshNodes.split('\n').filter(line => line.trim()).length;
+            const existingCache = cacheSaved ? null : await storageAdapter.get(cacheKey);
+            const existingNodeCount = existingCache?.nodeCount || String(existingCache?.nodes || '').split('\n').filter(line => line.trim()).length;
+            if (!cacheSaved && (isSuspiciousNodeCountDrop(existingNodeCount, freshNodeCount) || isLikelyPartialAggregateNodeList(freshNodes))) {
+                if (
+                    existingCache?.nodes
+                    && String(existingCache.nodes).trim()
+                    && !isLikelyPartialAggregateNodeList(existingCache.nodes)
+                ) {
+                    console.warn('[MiSub Cache] Serving preserved aggregate cache after rejecting a suspicious refresh');
+                    return existingCache.nodes;
+                }
+            }
         }
         return freshNodes;
     };
+
+    const expectedRemoteNodeCount = targetMisubs.reduce((total, sub) => {
+        if (!sub?.enabled || typeof sub?.url !== 'string' || !sub.url.startsWith('http')) return total;
+        const knownCount = Math.max(
+            Number(sub.lastGoodNodeCount) || 0,
+            Number(sub.nodeCount) || 0
+        );
+        return total + (Number.isFinite(knownCount) && knownCount > 0 ? knownCount : 0);
+    }, 0) + targetMisubs.filter(sub => sub?.enabled && typeof sub?.url === 'string' && !sub.url.startsWith('http')).length;
 
     const { combinedNodeList, cacheHeaders } = await resolveNodeListWithCache({
         storageAdapter,
@@ -734,18 +837,23 @@ export async function handleMisubRequest(context) {
         forceRefresh,
         refreshNodes,
         context,
-        targetMisubsCount: targetMisubs.length
+        targetMisubsCount: targetMisubs.length,
+        expectedNodeCount: expectedRemoteNodeCount
     });
 
     console.log(`[MiSub Nodes] Count/Length: ${combinedNodeList ? combinedNodeList.length : 0}`);
 
     const domain = url.hostname;
+    const mergedExpireTimestamp = mergeSubscriptionUserInfo(context, targetMisubs).expire;
+    const profileExpireText = `<b>到期时间:</b> <code>${tgEscape(formatNotificationExpireTime(currentProfile?.expiresAt, mergedExpireTimestamp))}</code>`;
+    const nodeCount = isProfileExpired ? 0 : countSubscriptionNodes(combinedNodeList, prependedContentForSubconverter);
+    const nodeCountText = `<b>节点数:</b> <code>${nodeCount}</code>`;
 
     // [Support] External Subconverter Logic
     // 1. If 'nodes' format requested, return plain text nodes (DataSource for external converters)
     if (targetFormat === 'nodes') {
         const contentToReturn = isProfileExpired ? (DEFAULT_EXPIRED_NODE + '\n') : combinedNodeList;
-        const userInfoHeader = buildUserInfoHeaderFromSubscriptions(context, targetMisubs);
+        const userInfoHeader = buildUserInfoHeaderFromSubscriptions(context, targetMisubs, currentProfile?.expiresAt);
         const nodeHeaders = {
             "Content-Type": "text/plain; charset=utf-8",
             'Cache-Control': 'no-store, no-cache',
@@ -766,7 +874,7 @@ export async function handleMisubRequest(context) {
     if (isExternalMode && targetFormat !== 'base64') {
         if (shouldRenderClashYamlProfileTemplateLocally({ isExternalMode, targetFormat, templateSource })) {
             try {
-                const userInfoHeader = buildUserInfoHeaderFromSubscriptions(context, targetMisubs);
+                const userInfoHeader = buildUserInfoHeaderFromSubscriptions(context, targetMisubs, currentProfile?.expiresAt);
                 const builtinOptions = {
                     ...resolveBuiltinRequestOptions({ searchParams: url.searchParams, userAgent: userAgentHeader }),
                     fileName: subName,
@@ -776,7 +884,10 @@ export async function handleMisubRequest(context) {
                     enableUdp: shouldEnableUdp,
                     enableTfo: urlTfo === 'true' || urlTfo === '1',
                     ruleLevel,
-                    isMeta: isMetaCore(userAgentHeader, url.searchParams)
+                    regionOverrides: Array.isArray(config.regionOverrides) ? config.regionOverrides : [],
+                    isMeta: isMetaCore(userAgentHeader, url.searchParams),
+                    customDnsOverride: config.customDnsOverride || '',
+                    dnsMode: url.searchParams.get('dns-mode') || url.searchParams.get('dnsMode') || config.dnsMode || 'clean'
                 };
                 const rendered = await ProcessorService.renderOutput({
                     targetFormat,
@@ -810,7 +921,7 @@ export async function handleMisubRequest(context) {
 
         const backend = url.searchParams.get('backend') || profileSub.backend || globalSub.defaultBackend;
         const externalNodeList = isProfileExpired ? (DEFAULT_EXPIRED_NODE + '\n') : combinedNodeList;
-        let externalUrl = buildExternalSubconverterUrl({
+        const externalUrl = buildExternalSubconverterUrl({
             backend,
             targetFormat,
             nodeList: externalNodeList,
@@ -822,34 +933,6 @@ export async function handleMisubRequest(context) {
             templateSource,
             subName
         });
-        let externalRedirectMode = 'external-redirect-v2';
-
-        if (shouldUseExternalNodesCallback({
-            inlineUrlLength: externalUrl.toString().length,
-            nodeCount: countNodeLines(externalNodeList)
-        })) {
-            const callbackProfileId = profileIdentifier || token || 'default';
-            const callback = await prepareExternalNodesCallback({
-                env,
-                requestUrl: request.url,
-                profileId: callbackProfileId,
-                nodesText: externalNodeList,
-                encoding: 'base64'
-            });
-            externalUrl = buildExternalSubconverterUrl({
-                backend,
-                targetFormat,
-                nodeList: callback.callbackUrl,
-                requestUrl: request.url,
-                profileSub,
-                globalSub,
-                userAgent: userAgentHeader,
-                searchParams: url.searchParams,
-                templateSource,
-                subName
-            });
-            externalRedirectMode = 'external-redirect-callback';
-        }
 
         // [Access Log] Send notification for external redirection
         if (!url.searchParams.has('callback_token') && !shouldSkipLogging && config.enableAccessLog) {
@@ -862,7 +945,7 @@ export async function handleMisubRequest(context) {
                     config,
                     '🛰️ <b>订阅被访问</b> (第三方转换)',
                     clientIp,
-                    `<b>域名:</b> <code>${tgEscape(domain)}</code>\n<b>客户端:</b> <code>${tgEscape(userAgentHeader)}</code>\n<b>请求格式:</b> <code>${tgEscape(targetFormat)}</code>\n<b>订阅组:</b> <code>${tgEscape(subName)}</code>`
+                    `<b>域名:</b> <code>${tgEscape(domain)}</code>\n<b>请求格式:</b> <code>${tgEscape(targetFormat)}</code>\n<b>客户端:</b> <code>${tgEscape(userAgentHeader)}</code>\n${nodeCountText}\n<b>订阅组:</b> <code>${tgEscape(subName)}</code>\n${profileExpireText}`
                 )
             );
         }
@@ -873,7 +956,7 @@ export async function handleMisubRequest(context) {
             headers: {
                 'Location': externalUrl.toString(),
                 'Cache-Control': 'no-store, no-cache',
-                'X-MiSub-Mode': externalRedirectMode,
+                'X-MiSub-Mode': 'external-redirect-v2',
                 ...(templateSource.kind === 'builtin' ? { 'X-MiSub-Template-Warning': 'external-engine-ignores-builtin-template' } : {})
             }
         });
@@ -903,7 +986,7 @@ export async function handleMisubRequest(context) {
                     config,
                     '🛰️ <b>订阅被访问</b>',
                     clientIp,
-                    `<b>域名:</b> <code>${tgEscape(domain)}</code>\n<b>客户端:</b> <code>${tgEscape(userAgentHeader)}</code>\n<b>请求格式:</b> <code>${tgEscape(targetFormat)}</code>\n<b>订阅组:</b> <code>${tgEscape(subName)}</code>`
+                    `<b>域名:</b> <code>${tgEscape(domain)}</code>\n<b>请求格式:</b> <code>${tgEscape(targetFormat)}</code>\n<b>客户端:</b> <code>${tgEscape(userAgentHeader)}</code>\n${nodeCountText}\n<b>订阅组:</b> <code>${tgEscape(subName)}</code>\n${profileExpireText}`
                 )
             );
 
@@ -941,7 +1024,10 @@ export async function handleMisubRequest(context) {
         enableUdp: finalEnableUdp,
         enableTfo: finalEnableTfo,
         ruleLevel: ruleLevel, // 统一后的规则等级
-        isMeta: isMetaCore(userAgentHeader, url.searchParams)
+        regionOverrides: Array.isArray(config.regionOverrides) ? config.regionOverrides : [],
+        isMeta: isMetaCore(userAgentHeader, url.searchParams),
+        customDnsOverride: config.customDnsOverride || '',
+        dnsMode: url.searchParams.get('dns-mode') || url.searchParams.get('dnsMode') || config.dnsMode || 'clean'
     };
 
     const managedConfigUrl = buildManagedConfigUrl(request.url);
@@ -958,7 +1044,7 @@ export async function handleMisubRequest(context) {
 
     if (shouldUseBuiltin) {
         try {
-            const userInfoHeader = buildUserInfoHeaderFromSubscriptions(context, targetMisubs);
+            const userInfoHeader = buildUserInfoHeaderFromSubscriptions(context, targetMisubs, currentProfile?.expiresAt);
 
             let { content: finalContent, contentType, headers: resultHeaders } = await ProcessorService.renderOutput({
                 targetFormat,
@@ -1013,7 +1099,7 @@ export async function handleMisubRequest(context) {
                         config,
                         '🛰️ <b>订阅被访问</b> (内置转换)',
                         clientIp,
-                        `<b>域名:</b> <code>${tgEscape(domain)}</code>\n<b>客户端:</b> <code>${tgEscape(userAgentHeader)}</code>\n<b>请求格式:</b> <code>${tgEscape(targetFormat)}</code>\n<b>订阅组:</b> <code>${tgEscape(subName)}</code>`
+                        `<b>域名:</b> <code>${tgEscape(domain)}</code>\n<b>请求格式:</b> <code>${tgEscape(targetFormat)}</code>\n<b>客户端:</b> <code>${tgEscape(userAgentHeader)}</code>\n${nodeCountText}\n<b>订阅组:</b> <code>${tgEscape(subName)}</code>\n${profileExpireText}`
                     )
                 );
 
@@ -1040,7 +1126,7 @@ export async function handleMisubRequest(context) {
     }
 
     const base64Headers = { "Content-Type": "text/plain; charset=utf-8", 'Cache-Control': 'no-store, no-cache' };
-    const userInfoHeader = buildUserInfoHeaderFromSubscriptions(context, targetMisubs);
+    const userInfoHeader = buildUserInfoHeaderFromSubscriptions(context, targetMisubs, currentProfile?.expiresAt);
     if (userInfoHeader) {
         base64Headers['Subscription-Userinfo'] = userInfoHeader;
         base64Headers['Profile-Update-Interval'] = String(config.UpdateInterval || 24);

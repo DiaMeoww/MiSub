@@ -3,6 +3,7 @@ import {
     buildExternalSubconverterUrl,
     buildManagedConfigUrl,
     extractProxySectionFromBuiltin,
+    formatNotificationExpireTime,
     resolveExternalTemplateConfigUrl,
     resolveTemplateSource,
     resolveTemplateUrl,
@@ -15,6 +16,16 @@ import {
 } from '../../functions/modules/subscription/template-compatibility.js';
 
 describe('Main handler template url', () => {
+    it('formats Telegram expiration with profile priority and merged fallback', () => {
+        const now = Date.parse('2029-01-01T00:00:00Z');
+        const mergedExpire = Math.floor(Date.parse('2030-01-01T00:00:00Z') / 1000);
+
+        expect(formatNotificationExpireTime('2031-01-02T03:04:05Z', mergedExpire, now)).toContain('2031');
+        expect(formatNotificationExpireTime('', mergedExpire, now)).toContain('2030');
+        expect(formatNotificationExpireTime('', 0, now)).toBe('未设置');
+        expect(formatNotificationExpireTime('', mergedExpire, Date.parse('2032-01-01T00:00:00Z'))).toBe('已到期');
+    });
+
     it('should preserve subscription url while removing cache flags', () => {
         const url = buildManagedConfigUrl('https://example.com/sub?profile=demo&refresh=1&nocache=1');
 

@@ -6,7 +6,8 @@
 import { urlToClashProxy, urlsToClashProxies } from '../../utils/url-to-clash.js';
 import { getUniqueName } from './name-utils.js';
 import { groupNodeLinesByRegion } from './region-groups.js';
-import { POLICY_GROUPS, getBuiltinRules, getRemoteProviderDefinitions, DEFAULT_SELECT_GROUP, DEFAULT_RELAY_GROUP, pruneProxyGroups } from './builtin-rules-provider.js';
+import { POLICY_GROUPS, getBuiltinRules, getRemoteProviderDefinitions, getSingboxDnsRuleSet, DEFAULT_SELECT_GROUP, DEFAULT_RELAY_GROUP, pruneProxyGroups } from './builtin-rules-provider.js';
+import { buildSingboxDnsConfig, DNS_PROXY_GROUP, SINGBOX_CN_RULE_SET } from './safe-dns.js';
 
 function cleanControlChars(str) {
     if (typeof str !== 'string') return str;
@@ -45,22 +46,17 @@ function buildOutbound(proxy) {
         outbound.password = proxy.password || '';
         if (proxy.udp) outbound.udp_over_tcp = false;
 
-        // 插件支持 (v2ray-plugin 映射为 Sing-box transport)
+        // sing-box 的 Shadowsocks 出站使用 SIP003 plugin/plugin_opts；
+        // `transport` 仅属于 V2Ray 传输协议，SFA 会严格拒绝它。
         const plugin = proxy.plugin || '';
         const opts = proxy['plugin-opts'] || proxy.pluginOpts || {};
         if (plugin === 'v2ray-plugin' || opts.mode === 'websocket') {
-            outbound.transport = {
-                type: 'ws',
-                path: opts.path || '/',
-                headers: opts.host ? { Host: opts.host } : {}
-            };
-            if (opts.tls || opts.mode === 'websocket-tls') {
-                outbound.tls = {
-                    enabled: true,
-                    server_name: opts.host || server,
-                    insecure: !!proxy['skip-cert-verify']
-                };
-            }
+            outbound.plugin = 'v2ray-plugin';
+            const pluginOptions = ['mode=websocket'];
+            if (opts.host) pluginOptions.push(`host=${opts.host}`);
+            if (opts.path) pluginOptions.push(`path=${opts.path}`);
+            if (opts.tls || opts.mode === 'websocket-tls') pluginOptions.push('tls');
+            outbound.plugin_opts = pluginOptions.join(';');
         }
     } else if (type === 'vmess') {
         outbound.type = 'vmess';
@@ -286,7 +282,7 @@ export function generateBuiltinSingboxConfig(nodeList, options = {}) {
     const levelKey = (ruleLevel || 'std').toUpperCase();
     // 获取内置策略组
     const policyGroupsFactory = POLICY_GROUPS[levelKey] || POLICY_GROUPS.STD;
-    let proxyGroups = policyGroupsFactory(outbounds);
+    let proxyGroups = policyGroupsFactory(outbounds, options);
     proxyGroups = pruneProxyGroups(proxyGroups, outbounds);
 
     if (levelKey === 'RELAY') {
@@ -338,7 +334,10 @@ export function generateBuiltinSingboxConfig(nodeList, options = {}) {
     
     // 提取远程 Rule Set 定义 (Sing-Box 格式)
     const ruleSetsMap = getRemoteProviderDefinitions('singbox', rawRules);
-    const ruleSets = Object.values(ruleSetsMap);
+    const ruleSets = [
+        getSingboxDnsRuleSet(),
+        ...Object.values(ruleSetsMap).filter(ruleSet => ruleSet.tag !== SINGBOX_CN_RULE_SET)
+    ];
 
     // 转换路由规则：将中间对象映射为 Sing-Box 语法
     const routeRules = [
@@ -351,16 +350,24 @@ export function generateBuiltinSingboxConfig(nodeList, options = {}) {
         { domain_suffix: ['cn'], outbound: 'DIRECT' }
     ];
 
+    const dnsConfig = buildSingboxDnsConfig(options.customDnsOverride || '', {
+        mode: options.dnsMode,
+        proxyGroup: DNS_PROXY_GROUP
+    });
+
     const config = {
         log: { level: 'info' },
-        dns: {
-            strategy: 'prefer_ipv4',
-            servers: [
-                { tag: 'dns-ali', address: '223.5.5.5', detour: 'DIRECT' },
-                { tag: 'dns-google', address: '8.8.8.8', detour: DEFAULT_SELECT_GROUP },
-                { tag: 'doh-cloudflare', address: 'https://1.1.1.1/dns-query', detour: DEFAULT_SELECT_GROUP }
-            ]
-        },
+        dns: dnsConfig,
+        inbounds: [
+            {
+                type: 'tun',
+                tag: 'tun-in',
+                address: ['172.19.0.1/30'],
+                auto_route: true,
+                strict_route: true,
+                stack: 'mixed'
+            }
+        ],
         outbounds: [
             { tag: 'DIRECT', type: 'direct' },
             { tag: 'REJECT', type: 'block' },
@@ -369,6 +376,7 @@ export function generateBuiltinSingboxConfig(nodeList, options = {}) {
         ],
         route: {
             auto_detect_interface: true,
+            default_domain_resolver: dnsConfig.servers[0]?.tag || 'dns-cn-1',
             final: levelKey === 'RELAY' ? DEFAULT_RELAY_GROUP : DEFAULT_SELECT_GROUP,
             rule_set: ruleSets,
             rules: routeRules

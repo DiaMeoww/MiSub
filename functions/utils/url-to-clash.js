@@ -3,6 +3,7 @@
  */
 
 import { extractNodeMetadata } from '../modules/utils/metadata-extractor.js';
+import { isLocalProxyEndpoint } from './node-utils.js';
 
 /**
  * 解析 URL 查询参数
@@ -133,21 +134,119 @@ function parseVlessUrl(url) {
             }
         }
         
-        // xHTTP 配置 (Loon 3.0+ / Xray 1.8.7+)
-        if (network === 'xhttp') {
-            const xhttpOpts = {};
-            const path = params.get('xhttp-path') || params.get('path');
-            const host = params.get('xhttp-host') || params.get('host') || params.get('sni');
-            if (path) xhttpOpts.path = path;
-            if (host) {
-                xhttpOpts.host = host;
-                xhttpOpts.headers = { Host: host };
+       // xHTTP 配置
+if (network === 'xhttp') {
+    const xhttpOpts = {};
+
+    const path =
+        params.get('xhttp-path') ||
+        params.get('path');
+
+    const host =
+        params.get('xhttp-host') ||
+        params.get('host') ||
+        params.get('sni');
+
+    if (path) {
+        xhttpOpts.path = path;
+    }
+
+    if (host) {
+        xhttpOpts.host = host;
+
+        // 保留 MiSub 原有逻辑
+        xhttpOpts.headers = {
+            Host: host
+        };
+    }
+
+    // XHTTP mode
+    if (params.get('mode')) {
+        xhttpOpts.mode = params.get('mode');
+    }
+
+    /*
+     * Xray XHTTP 分享链接中的高级参数通常保存在 extra JSON 中：
+     *
+     * extra={
+     *   "xPaddingObfsMode": true,
+     *   "xPaddingMethod": "tokenish",
+     *   "xPaddingPlacement": "queryInHeader",
+     *   "xPaddingHeader": "...",
+     *   "xPaddingKey": "..."
+     * }
+     *
+     * 转换为 Mihomo / Clash Meta 的 xhttp-opts 字段。
+     */
+    const extraRaw = params.get('extra');
+
+    if (extraRaw) {
+        try {
+            const extra = JSON.parse(extraRaw);
+
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    extra,
+                    'xPaddingObfsMode'
+                )
+            ) {
+                xhttpOpts['x-padding-obfs-mode'] =
+                    extra.xPaddingObfsMode;
             }
-            if (params.get('mode')) xhttpOpts.mode = params.get('mode');
-            if (Object.keys(xhttpOpts).length > 0) {
-                proxy['xhttp-opts'] = xhttpOpts;
+
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    extra,
+                    'xPaddingMethod'
+                )
+            ) {
+                xhttpOpts['x-padding-method'] =
+                    extra.xPaddingMethod;
             }
+
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    extra,
+                    'xPaddingPlacement'
+                )
+            ) {
+                xhttpOpts['x-padding-placement'] =
+                    extra.xPaddingPlacement;
+            }
+
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    extra,
+                    'xPaddingHeader'
+                )
+            ) {
+                xhttpOpts['x-padding-header'] =
+                    extra.xPaddingHeader;
+            }
+
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    extra,
+                    'xPaddingKey'
+                )
+            ) {
+                xhttpOpts['x-padding-key'] =
+                    extra.xPaddingKey;
+            }
+
+        } catch (e) {
+            // extra 非法时不能让整个订阅转换失败
+            console.warn(
+                '[MiSub] XHTTP extra 参数解析失败:',
+                e
+            );
         }
+    }
+
+    if (Object.keys(xhttpOpts).length > 0) {
+        proxy['xhttp-opts'] = xhttpOpts;
+    }
+}
 
         // gRPC 配置
         if (network === 'grpc') {
@@ -284,6 +383,16 @@ function parseTrojanUrl(url) {
             }
             if (Object.keys(wsOpts).length > 0) {
                 proxy['ws-opts'] = wsOpts;
+            }
+        }
+
+        // gRPC 配置
+        if (network === 'grpc') {
+            const grpcOpts = {};
+            if (params.get('serviceName')) grpcOpts['grpc-service-name'] = params.get('serviceName');
+            if (params.get('mode')) grpcOpts['grpc-mode'] = params.get('mode');
+            if (Object.keys(grpcOpts).length > 0) {
+                proxy['grpc-opts'] = grpcOpts;
             }
         }
 
@@ -642,12 +751,30 @@ function parseHysteria2Url(url) {
             proxy['skip-cert-verify'] = true;
         }
 
+        // [Hysteria2] handshake timeout
+        const handshakeTimeout = params.get('handshake-timeout');
+        if (handshakeTimeout) {
+            proxy["handshake-timeout"] = parseInt(handshakeTimeout, 10);
+        }
+
         // Obfs
         if (params.get('obfs')) {
             proxy.obfs = params.get('obfs');
             if (params.get('obfs-password')) {
                 proxy['obfs-password'] = params.get('obfs-password');
             }
+        }
+
+        if (params.get('ports') || params.get('mport')) {
+            proxy.ports = params.get('ports') || params.get('mport');
+        }
+        if (params.get('up')) proxy.up = params.get('up');
+        if (params.get('down')) proxy.down = params.get('down');
+        const fastOpen = params.get('fast_open') || params.get('fast-open');
+        if (fastOpen === '1' || fastOpen === 'true') {
+            proxy['fast-open'] = true;
+        } else if (fastOpen === '0' || fastOpen === 'false') {
+            proxy['fast-open'] = false;
         }
 
         const realmId = params.get('realm-id');
@@ -670,6 +797,7 @@ function parseHysteria2Url(url) {
         if (params.get('dp')) {
             proxy['dialer-proxy'] = params.get('dp');
         }
+
 
 return proxy;
 } catch (e) {
@@ -859,15 +987,15 @@ const { server, port } = parseHostPort(serverPart);
 const params = parseQueryParams(url);
 const name = extractName(url);
 
-const proxy = {
-name: name || `WireGuard-${server}`,
-type: 'wireguard',
-server,
-port,
-'private-key': privateKey,
-'remote-dns-resolve': true,
-udp: true
-};
+    const proxy = {
+        name: name || `WireGuard-${server}`,
+        type: 'wireguard',
+        server,
+        port,
+        'private-key': privateKey,
+        'remote-dns-resolve': true,
+        udp: true
+    };
 
 // 公钥
 const publicKey = params.get('publickey') || params.get('public-key');
@@ -875,10 +1003,19 @@ if (publicKey) {
 proxy['public-key'] = publicKey;
 }
 
-// 本地地址
+// 本地地址。保留 WireGuard 的 CIDR 和多地址形状，避免转换往返时丢失
+// 隧道前缀；同时提供 ipv6 兼容字段给需要独立 IPv6 字段的渲染器。
 const address = params.get('address');
 if (address) {
-proxy.ip = address.split(',').map(a => a.trim());
+    const addresses = address
+        .split(',')
+        .map(a => a.trim())
+        .filter(Boolean);
+
+    const ipv6 = addresses.find(a => a.includes(':'));
+
+    if (addresses.length > 0) proxy.ip = addresses;
+    if (ipv6) proxy.ipv6 = ipv6;
 }
 
 // Allowed IPs
@@ -1357,7 +1494,7 @@ export function urlsToClashProxies(urls, options = {}) {
             
             return proxy;
         })
-        .filter(proxy => proxy !== null);
+        .filter(proxy => proxy !== null && !isLocalProxyEndpoint(proxy));
 }
 
 /**

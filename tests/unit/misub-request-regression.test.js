@@ -92,7 +92,7 @@ describe('handleMisubRequest regression coverage', () => {
         }
     });
 
-    it('normalizes external converter hosts and sends preprocessed nodes inline', async () => {
+    it('normalizes external converter hosts and uses the current base64 subscription as its data source', async () => {
         const subscriptions = [{
             id: 'sub-a',
             name: '鏈哄満A',
@@ -122,15 +122,17 @@ describe('handleMisubRequest regression coverage', () => {
                 waitUntil: vi.fn()
             });
             const redirectUrl = new URL(initialResponse.headers.get('Location'));
-            const inlineNodeList = redirectUrl.searchParams.get('url');
+            const dataSourceUrl = new URL(redirectUrl.searchParams.get('url'));
 
             expect(initialResponse.status).toBe(302);
             expect(redirectUrl.origin + redirectUrl.pathname).toBe('https://sub.example/sub');
             expect(redirectUrl.searchParams.get('target')).toBe('clash');
-            expect(inlineNodeList).toContain('trojan://pass@example.com:443#');
-            expect(inlineNodeList).not.toContain('misub.example');
-            expect(inlineNodeList).not.toContain('target=nodes');
-            expect(inlineNodeList).not.toContain('\n');
+            expect(dataSourceUrl.origin + dataSourceUrl.pathname).toBe('https://misub.example/stable-token');
+            expect(dataSourceUrl.searchParams.has('base64')).toBe(true);
+            expect(dataSourceUrl.searchParams.get('callback_token')).toBe('external');
+            expect(dataSourceUrl.searchParams.has('target')).toBe(false);
+            expect(dataSourceUrl.searchParams.has('refresh')).toBe(false);
+            expect(redirectUrl.searchParams.get('url')).not.toContain('trojan://pass@example.com');
             expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[MiSub Request]'));
             expect(logSpy).toHaveBeenCalledWith('[MiSub Nodes] Count/Length: 68');
         } finally {
@@ -138,7 +140,7 @@ describe('handleMisubRequest regression coverage', () => {
         }
     });
 
-    it('switches large external converter redirects to a temporary callback URL', async () => {
+    it('uses the current base64 subscription for large external redirects without callback secrets or temporary writes', async () => {
         const subscriptions = [{
             id: 'sub-a',
             name: 'Airport A',
@@ -156,7 +158,6 @@ describe('handleMisubRequest regression coverage', () => {
         });
         const kvWrites = new Map();
         const env = {
-            CALLBACK_TOKEN_SECRET: 'callback-secret',
             MISUB_KV: {
                 get: vi.fn(async (key) => kvWrites.get(key) || null),
                 put: vi.fn(async (key, value) => {
@@ -182,19 +183,20 @@ describe('handleMisubRequest regression coverage', () => {
                 waitUntil: vi.fn()
             });
             const redirectUrl = new URL(response.headers.get('Location'));
-            const callbackUrl = new URL(redirectUrl.searchParams.get('url'));
+            const dataSourceUrl = new URL(redirectUrl.searchParams.get('url'));
 
             expect(response.status).toBe(302);
             expect(redirectUrl.origin + redirectUrl.pathname).toBe('https://sub.example/sub');
             expect(redirectUrl.searchParams.get('target')).toBe('clash');
-            expect(callbackUrl.origin + callbackUrl.pathname).toBe('https://misub.example/api/external-nodes-callback');
-            expect(callbackUrl.searchParams.get('token')).toBeTruthy();
-            expect(callbackUrl.searchParams.get('encoding')).toBe('base64');
+            expect(dataSourceUrl.origin + dataSourceUrl.pathname).toBe('https://misub.example/stable-token');
+            expect(dataSourceUrl.searchParams.has('base64')).toBe(true);
+            expect(dataSourceUrl.searchParams.get('callback_token')).toBe('external');
+            expect(dataSourceUrl.searchParams.has('target')).toBe(false);
+            expect(dataSourceUrl.searchParams.has('refresh')).toBe(false);
             expect(redirectUrl.searchParams.get('url')).not.toContain('trojan://pass0@example.com');
             const externalNodeCacheWrites = [...kvWrites.entries()].filter(([key]) => key.startsWith('tmp_external_nodes:'));
-            expect(externalNodeCacheWrites).toHaveLength(1);
-            expect(externalNodeCacheWrites[0][1]).toContain('trojan://pass0@example.com:443#');
-            expect(response.headers.get('X-MiSub-Mode')).toBe('external-redirect-callback');
+            expect(externalNodeCacheWrites).toHaveLength(0);
+            expect(response.headers.get('X-MiSub-Mode')).toBe('external-redirect-v2');
         } finally {
             logSpy.mockRestore();
         }
@@ -235,14 +237,15 @@ describe('handleMisubRequest regression coverage', () => {
                 waitUntil: vi.fn()
             });
             const redirectUrl = new URL(response.headers.get('Location'));
-            const inlineNodeList = redirectUrl.searchParams.get('url');
+            const dataSourceUrl = new URL(redirectUrl.searchParams.get('url'));
 
             expect(response.status).toBe(302);
             expect(redirectUrl.origin + redirectUrl.pathname).toBe(expectedEndpoint);
             expect(redirectUrl.searchParams.get('target')).toBe('clash');
-            expect(inlineNodeList).toContain('trojan://pass@example.com:443#');
-            expect(inlineNodeList).not.toContain('target=nodes');
-            expect(inlineNodeList).not.toContain('\n');
+            expect(dataSourceUrl.origin + dataSourceUrl.pathname).toBe('https://misub.example/stable-token');
+            expect(dataSourceUrl.searchParams.has('base64')).toBe(true);
+            expect(dataSourceUrl.searchParams.get('callback_token')).toBe('external');
+            expect(dataSourceUrl.searchParams.has('target')).toBe(false);
             expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[MiSub Request]'));
             expect(logSpy).toHaveBeenCalledWith('[MiSub Nodes] Count/Length: 51');
         } finally {
@@ -289,6 +292,218 @@ describe('handleMisubRequest regression coverage', () => {
             expect(waitUntilPromises.length).toBeGreaterThan(0);
             expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[MiSub Request]'));
             expect(logSpy).toHaveBeenCalledWith('[MiSub Nodes] Count/Length: 51');
+        } finally {
+            logSpy.mockRestore();
+        }
+    });
+
+    it('uses the subscription group expiration time in the output traffic header', async () => {
+        const subscriptions = [{
+            id: 'sub-a',
+            name: 'Airport A',
+            url: 'https://airport.example/sub',
+            enabled: true,
+            userInfo: null
+        }];
+        const profileExpiresAt = '2030-01-02T03:04:05.000Z';
+        const adapter = createStorageAdapter({
+            settings: {
+                mytoken: 'stable-token',
+                profileToken: 'stable-token',
+                enableFlagEmoji: false,
+                enableTrafficNode: false
+            },
+            subscriptions,
+            profiles: [{
+                id: 'profile-a',
+                name: 'Profile A',
+                enabled: true,
+                expiresAt: profileExpiresAt,
+                subscriptions: ['sub-a'],
+                manualNodes: []
+            }]
+        });
+        createAdapter.mockReturnValue(adapter);
+        vi.stubGlobal('fetch', vi.fn(async () => new Response('trojan://pass@example.com:443#HK', {
+            status: 200,
+            headers: {
+                'subscription-userinfo': 'upload=10; download=20; total=1000; expire=2000'
+            }
+        })));
+
+        const logSpy = silenceExpectedRequestLogs();
+        try {
+            const { handleMisubRequest } = await import('../../functions/modules/subscription/main-handler.js');
+            const response = await handleMisubRequest({
+                request: new Request('https://misub.example/stable-token/profile-a?target=nodes&refresh=1', {
+                    headers: { 'User-Agent': 'ClashMeta' }
+                }),
+                env: {},
+                waitUntil: vi.fn()
+            });
+
+            expect(response.status).toBe(200);
+            expect(response.headers.get('Subscription-Userinfo'))
+                .toBe(`upload=10; download=20; total=1000; expire=${Math.floor(new Date(profileExpiresAt).getTime() / 1000)}`);
+        } finally {
+            logSpy.mockRestore();
+        }
+    });
+
+    it('falls back to the merged subscription expiration when the group expiration is not set', async () => {
+        const subscriptions = [{
+            id: 'sub-a',
+            name: 'Airport A',
+            url: 'https://airport.example/sub',
+            enabled: true,
+            userInfo: null
+        }];
+        const adapter = createStorageAdapter({
+            settings: {
+                mytoken: 'stable-token',
+                profileToken: 'stable-token',
+                enableFlagEmoji: false,
+                enableTrafficNode: false
+            },
+            subscriptions,
+            profiles: [{
+                id: 'profile-a',
+                name: 'Profile A',
+                enabled: true,
+                expiresAt: '',
+                subscriptions: ['sub-a'],
+                manualNodes: []
+            }]
+        });
+        createAdapter.mockReturnValue(adapter);
+        vi.stubGlobal('fetch', vi.fn(async () => new Response('trojan://pass@example.com:443#HK', {
+            status: 200,
+            headers: {
+                'subscription-userinfo': 'upload=10; download=20; total=1000; expire=2000'
+            }
+        })));
+
+        const logSpy = silenceExpectedRequestLogs();
+        try {
+            const { handleMisubRequest } = await import('../../functions/modules/subscription/main-handler.js');
+            const response = await handleMisubRequest({
+                request: new Request('https://misub.example/stable-token/profile-a?target=nodes&refresh=1', {
+                    headers: { 'User-Agent': 'ClashMeta' }
+                }),
+                env: {},
+                waitUntil: vi.fn()
+            });
+
+            expect(response.status).toBe(200);
+            expect(response.headers.get('Subscription-Userinfo'))
+                .toBe('upload=10; download=20; total=1000; expire=2000');
+        } finally {
+            logSpy.mockRestore();
+        }
+    });
+
+    it('shows the subscription group expiration in the virtual node list', async () => {
+        const subscriptions = [{
+            id: 'sub-a',
+            name: 'Airport A',
+            url: 'https://airport.example/sub',
+            enabled: true,
+            userInfo: { upload: 10, download: 20, total: 1000, expire: 2000 }
+        }];
+        const profileExpiresAt = '2030-01-02T03:04:05.000Z';
+        const adapter = createStorageAdapter({
+            settings: {
+                mytoken: 'stable-token',
+                profileToken: 'stable-token',
+                enableFlagEmoji: false,
+                enableTrafficNode: true
+            },
+            subscriptions,
+            profiles: [{
+                id: 'profile-a',
+                name: 'Profile A',
+                enabled: true,
+                expiresAt: profileExpiresAt,
+                subscriptions: ['sub-a'],
+                manualNodes: []
+            }]
+        });
+        createAdapter.mockReturnValue(adapter);
+        vi.stubGlobal('fetch', vi.fn(async () => new Response('trojan://pass@example.com:443#HK', {
+            status: 200,
+            headers: {
+                'subscription-userinfo': 'upload=10; download=20; total=1000; expire=2000'
+            }
+        })));
+
+        const logSpy = silenceExpectedRequestLogs();
+        try {
+            const { handleMisubRequest } = await import('../../functions/modules/subscription/main-handler.js');
+            const response = await handleMisubRequest({
+                request: new Request('https://misub.example/stable-token/profile-a?target=nodes&refresh=1', {
+                    headers: { 'User-Agent': 'ClashMeta' }
+                }),
+                env: {},
+                waitUntil: vi.fn()
+            });
+            const text = decodeURIComponent(await response.text());
+
+            expect(response.status).toBe(200);
+            expect(text).toContain('流量剩余 ≫ 970 B');
+            expect(text).toContain('到期时间 ≫ 2030-01-02');
+        } finally {
+            logSpy.mockRestore();
+        }
+    });
+
+    it('shows the merged source expiration when the subscription group expiration is not set', async () => {
+        const subscriptions = [
+            { id: 'sub-a', name: 'Airport A', url: 'https://a.example/sub', enabled: true, userInfo: { upload: 0, download: 0, total: 1000, expire: 1893456000 } },
+            { id: 'sub-b', name: 'Airport B', url: 'https://b.example/sub', enabled: true, userInfo: { upload: 0, download: 0, total: 1000, expire: 1924992000 } }
+        ];
+        const adapter = createStorageAdapter({
+            settings: {
+                mytoken: 'stable-token',
+                profileToken: 'stable-token',
+                enableFlagEmoji: false,
+                enableTrafficNode: true,
+                mergeExpireStrategy: 'min'
+            },
+            subscriptions,
+            profiles: [{
+                id: 'profile-a',
+                name: 'Profile A',
+                enabled: true,
+                expiresAt: '',
+                subscriptions: ['sub-a', 'sub-b'],
+                manualNodes: []
+            }]
+        });
+        createAdapter.mockReturnValue(adapter);
+        vi.stubGlobal('fetch', vi.fn(async (request) => {
+            const requestUrl = typeof request === 'string' ? request : request.url;
+            const expire = requestUrl.includes('a.example') ? 1893456000 : 1924992000;
+            return new Response(`trojan://pass@${new URL(requestUrl).hostname}:443#HK`, {
+                status: 200,
+                headers: { 'subscription-userinfo': `upload=0; download=0; total=1000; expire=${expire}` }
+            });
+        }));
+
+        const logSpy = silenceExpectedRequestLogs();
+        try {
+            const { handleMisubRequest } = await import('../../functions/modules/subscription/main-handler.js');
+            const response = await handleMisubRequest({
+                request: new Request('https://misub.example/stable-token/profile-a?target=nodes&refresh=1', {
+                    headers: { 'User-Agent': 'ClashMeta' }
+                }),
+                env: {},
+                waitUntil: vi.fn()
+            });
+            const text = decodeURIComponent(await response.text());
+
+            expect(response.status).toBe(200);
+            expect(text).toContain('到期时间 ≫ 2030-01-01');
+            expect(text).not.toContain('2031-01-01');
         } finally {
             logSpy.mockRestore();
         }
@@ -423,6 +638,61 @@ describe('handleMisubRequest regression coverage', () => {
             expect(globalThis.fetch).toHaveBeenCalledTimes(1);
         } finally {
             logSpy.mockRestore();
+        }
+    });
+
+    it('serves the preserved aggregate cache when a forced refresh collapses from many nodes to one', async () => {
+        const subscriptions = [{
+            id: 'sub-a',
+            name: 'Airport A',
+            url: 'https://airport.example/sub',
+            enabled: true,
+            enableNodeCache: false,
+            userInfo: { upload: 1, download: 2, total: 1000, expire: 2000 }
+        }];
+        const adapter = createStorageAdapter({
+            settings: { mytoken: 'stable-token', enableFlagEmoji: false, enableTrafficNode: true },
+            subscriptions
+        });
+        const healthyNodes = Array.from({ length: 156 }, (_, index) =>
+            `trojan://cached${index}@node${index}.example.com:443#Cached-${index}`
+        ).join('\n') + '\n';
+        adapter.store.set('node_cache_token_stable-token', {
+            nodes: healthyNodes,
+            timestamp: Date.now(),
+            nodeCount: 156,
+            sources: ['Airport A']
+        });
+        createAdapter.mockReturnValue(adapter);
+        vi.stubGlobal('fetch', vi.fn(async () => new Response(
+            'vless://11111111-1111-1111-1111-111111111111@example.com:443#11111111-1111-1111-1111-111111111111',
+            { status: 200 }
+        )));
+
+        const logSpy = silenceExpectedRequestLogs();
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+            const { handleMisubRequest } = await import('../../functions/modules/subscription/main-handler.js');
+            const response = await handleMisubRequest({
+                request: new Request('https://misub.example/stable-token?target=nodes&refresh=1', {
+                    headers: { 'User-Agent': 'ClashMeta' }
+                }),
+                env: {},
+                waitUntil: vi.fn()
+            });
+            const text = await response.text();
+
+            expect(response.status).toBe(200);
+            expect(text.split('\n').filter(Boolean)).toHaveLength(156);
+            expect(text).toContain('trojan://cached0@node0.example.com:443#Cached-0');
+            expect(text).not.toContain('11111111-1111-1111-1111-111111111111');
+            expect(adapter.store.get('node_cache_token_stable-token').nodeCount).toBe(156);
+            expect(warnSpy).toHaveBeenCalledWith(
+                '[Cache] Refusing to overwrite cache node_cache_token_stable-token after suspicious node-count drop (156 -> 3)'
+            );
+        } finally {
+            logSpy.mockRestore();
+            warnSpy.mockRestore();
         }
     });
 });

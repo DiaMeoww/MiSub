@@ -18,6 +18,40 @@ const DATA_KEYS = {
     PROFILE_DOWNLOAD_COUNT_PREFIX: 'misub_profile_download_count_'
 };
 
+const D1_COLLECTION_CACHE_TTL_MS = 30 * 1000;
+const d1CollectionCaches = new WeakMap();
+
+function getD1CollectionCache(database) {
+    let cache = d1CollectionCaches.get(database);
+    if (!cache) {
+        cache = new Map();
+        d1CollectionCaches.set(database, cache);
+    }
+    return cache;
+}
+
+function invalidateD1CollectionCache(database, table) {
+    getD1CollectionCache(database).delete(table);
+}
+
+async function readCachedD1Collection(database, table, loader) {
+    const cache = getD1CollectionCache(database);
+    const now = Date.now();
+    const existing = cache.get(table);
+    if (existing && now - existing.timestamp < D1_COLLECTION_CACHE_TTL_MS) {
+        return structuredClone(await existing.promise);
+    }
+
+    const promise = Promise.resolve().then(loader);
+    cache.set(table, { timestamp: now, promise });
+    try {
+        return structuredClone(await promise);
+    } catch (error) {
+        if (cache.get(table)?.promise === promise) cache.delete(table);
+        throw error;
+    }
+}
+
 const D1_SCHEMA_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS subscriptions (
         id TEXT PRIMARY KEY,
@@ -236,6 +270,9 @@ class D1StorageAdapter {
                 `).bind(queryValue, data).run();
             }
 
+            if (table === 'subscriptions' || table === 'profiles') {
+                invalidateD1CollectionCache(this.db, table);
+            }
             return true;
         } catch (error) {
             console.error(`[D1] Failed to put key ${key}:`, error);
@@ -251,6 +288,9 @@ class D1StorageAdapter {
                 `DELETE FROM ${table} WHERE ${queryField} = ?`
             ).bind(queryValue).run();
 
+            if (table === 'subscriptions' || table === 'profiles') {
+                invalidateD1CollectionCache(this.db, table);
+            }
             return true;
         } catch (error) {
             console.error(`[D1] Failed to delete key ${key}:`, error);
@@ -327,29 +367,32 @@ class D1StorageAdapter {
     }
 
     async getAllSubscriptions() {
-        try {
-            const results = await this.db.prepare('SELECT data FROM subscriptions').all();
-            if (!Array.isArray(results?.results)) return [];
+        return readCachedD1Collection(this.db, 'subscriptions', async () => {
+            try {
+                const results = await this.db.prepare('SELECT data FROM subscriptions').all();
+                if (!Array.isArray(results?.results)) return [];
 
-            const all = [];
-            results.results.forEach(row => {
-                const parsed = JSON.parse(row.data);
-                if (Array.isArray(parsed)) {
-                    all.push(...parsed);
-                } else if (parsed) {
-                    all.push(parsed);
-                }
-            });
+                const all = [];
+                results.results.forEach(row => {
+                    const parsed = JSON.parse(row.data);
+                    if (Array.isArray(parsed)) {
+                        all.push(...parsed);
+                    } else if (parsed) {
+                        all.push(parsed);
+                    }
+                });
 
-            const deduped = new Map();
-            all.forEach(item => {
-                if (item?.id) deduped.set(item.id, item);
-            });
-            return Array.from(deduped.values()).sort((a, b) => (a.sortIndex || 0) - (b.sortIndex || 0));
-        } catch (error) {
-            console.error('[D1] Failed to get all subscriptions:', error);
-            return [];
-        }
+                const deduped = new Map();
+                all.forEach(item => {
+                    if (item?.id) deduped.set(item.id, item);
+                });
+                return Array.from(deduped.values()).sort((a, b) => (a.sortIndex || 0) - (b.sortIndex || 0));
+            } catch (error) {
+                invalidateD1CollectionCache(this.db, 'subscriptions');
+                console.error('[D1] Failed to get all subscriptions:', error);
+                return [];
+            }
+        });
     }
 
     async getProfileById(id) {
@@ -367,29 +410,32 @@ class D1StorageAdapter {
     }
 
     async getAllProfiles() {
-        try {
-            const results = await this.db.prepare('SELECT data FROM profiles').all();
-            if (!Array.isArray(results?.results)) return [];
+        return readCachedD1Collection(this.db, 'profiles', async () => {
+            try {
+                const results = await this.db.prepare('SELECT data FROM profiles').all();
+                if (!Array.isArray(results?.results)) return [];
 
-            const all = [];
-            results.results.forEach(row => {
-                const parsed = JSON.parse(row.data);
-                if (Array.isArray(parsed)) {
-                    all.push(...parsed);
-                } else if (parsed) {
-                    all.push(parsed);
-                }
-            });
+                const all = [];
+                results.results.forEach(row => {
+                    const parsed = JSON.parse(row.data);
+                    if (Array.isArray(parsed)) {
+                        all.push(...parsed);
+                    } else if (parsed) {
+                        all.push(parsed);
+                    }
+                });
 
-            const deduped = new Map();
-            all.forEach(item => {
-                if (item?.id) deduped.set(item.id, item);
-            });
-            return Array.from(deduped.values()).sort((a, b) => (a.sortIndex || 0) - (b.sortIndex || 0));
-        } catch (error) {
-            console.error('[D1] Failed to get all profiles:', error);
-            return [];
-        }
+                const deduped = new Map();
+                all.forEach(item => {
+                    if (item?.id) deduped.set(item.id, item);
+                });
+                return Array.from(deduped.values()).sort((a, b) => (a.sortIndex || 0) - (b.sortIndex || 0));
+            } catch (error) {
+                invalidateD1CollectionCache(this.db, 'profiles');
+                console.error('[D1] Failed to get all profiles:', error);
+                return [];
+            }
+        });
     }
 
     async updateSubscriptionById(id, updater) {
@@ -400,6 +446,7 @@ class D1StorageAdapter {
             INSERT OR REPLACE INTO subscriptions (id, data, updated_at)
             VALUES (?, ?, CURRENT_TIMESTAMP)
         `).bind(id, JSON.stringify(updated)).run();
+        invalidateD1CollectionCache(this.db, 'subscriptions');
         return updated;
     }
 
@@ -408,11 +455,13 @@ class D1StorageAdapter {
             INSERT OR REPLACE INTO subscriptions (id, data, updated_at)
             VALUES (?, ?, CURRENT_TIMESTAMP)
         `).bind(item.id, JSON.stringify(item)).run();
+        invalidateD1CollectionCache(this.db, 'subscriptions');
         return item;
     }
 
     async deleteSubscriptionById(id) {
         const result = await this.db.prepare('DELETE FROM subscriptions WHERE id = ?').bind(id).run();
+        invalidateD1CollectionCache(this.db, 'subscriptions');
         return Boolean(result?.success);
     }
 
@@ -421,11 +470,13 @@ class D1StorageAdapter {
             INSERT OR REPLACE INTO profiles (id, data, updated_at)
             VALUES (?, ?, CURRENT_TIMESTAMP)
         `).bind(item.id, JSON.stringify(item)).run();
+        invalidateD1CollectionCache(this.db, 'profiles');
         return item;
     }
 
     async deleteProfileById(id) {
         const result = await this.db.prepare('DELETE FROM profiles WHERE id = ?').bind(id).run();
+        invalidateD1CollectionCache(this.db, 'profiles');
         return Boolean(result?.success);
     }
 
@@ -798,6 +849,7 @@ export class DataMigrator {
                     results.subscriptions += 1;
                 }
                 await d1Adapter.db.prepare('DELETE FROM subscriptions WHERE id = ?').bind('main').run();
+                invalidateD1CollectionCache(d1Adapter.db, 'subscriptions');
             }
         } catch (error) {
             results.errors.push(`订阅主行迁移失败: ${error.message}`);
@@ -812,6 +864,7 @@ export class DataMigrator {
                     results.profiles += 1;
                 }
                 await d1Adapter.db.prepare('DELETE FROM profiles WHERE id = ?').bind('main').run();
+                invalidateD1CollectionCache(d1Adapter.db, 'profiles');
             }
         } catch (error) {
             results.errors.push(`订阅组主行迁移失败: ${error.message}`);

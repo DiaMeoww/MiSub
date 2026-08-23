@@ -298,12 +298,31 @@ function buildWireGuardResult(name, proxy) {
     }
 
     // self-ip（本地隧道地址）
+    // if (proxy.ip) {
+    //     const ips = Array.isArray(proxy.ip) ? proxy.ip : [proxy.ip];
+    //     const ipv4 = ips.find(ip => !ip.includes(':'));
+    //     const ipv6 = ips.find(ip => ip.includes(':'));
+    //     if (ipv4) wgLines.push(`self-ip = ${ipv4}`);
+    //     if (ipv6) wgLines.push(`self-ip-v6 = ${ipv6}`);
+    // }
     if (proxy.ip) {
-        const ips = Array.isArray(proxy.ip) ? proxy.ip : [proxy.ip];
-        const ipv4 = ips.find(ip => !ip.includes(':'));
-        const ipv6 = ips.find(ip => ip.includes(':'));
-        if (ipv4) wgLines.push(`self-ip = ${ipv4}`);
-        if (ipv6) wgLines.push(`self-ip-v6 = ${ipv6}`);
+        const ipv4 = Array.isArray(proxy.ip)
+            ? proxy.ip.find(ip => !ip.includes(':'))
+            : proxy.ip;
+    
+        if (ipv4) {
+            wgLines.push(`self-ip = ${ipv4}`);
+        }
+    }
+
+    if (proxy.ipv6) {
+        const ipv6 = Array.isArray(proxy.ipv6)
+            ? proxy.ipv6.find(Boolean)
+            : proxy.ipv6;
+    
+        if (ipv6) {
+            wgLines.push(`self-ip-v6 = ${ipv6}`);
+        }
     }
 
     // DNS 服务器
@@ -465,7 +484,7 @@ dns-server = 119.29.29.29, 223.5.5.5, system`);
     }));
     
     // 生成策略组
-    let abstractGroups = policyFactory(proxiesForGrouping);
+    let abstractGroups = policyFactory(proxiesForGrouping, options);
     if (levelKey === 'RELAY') {
         abstractGroups = abstractGroups.map(group => group.name === '🔗 链式代理'
             ? { ...group, type: 'relay', proxies: ['入口节点', '落地节点'] }
