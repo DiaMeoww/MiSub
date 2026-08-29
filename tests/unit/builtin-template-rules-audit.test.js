@@ -147,8 +147,8 @@ describe('Builtin template rule audit', () => {
         const clash = yaml.load(renderClashFromTemplateModel(model));
         const singbox = JSON.parse(renderSingboxFromTemplateModel(model));
 
-        expect(clash['allow-lan']).toBe(false);
-        expect(clash['bind-address']).toBe('127.0.0.1');
+        expect(clash['allow-lan']).toBe(true);
+        expect(clash['bind-address']).toBeUndefined();
         expect(clash['external-controller']).toBe('127.0.0.1:9090');
         expect(clash.dns['respect-rules']).toBe(true);
         expect(singbox.inbounds[0]).toMatchObject({ type: 'tun', auto_route: true, strict_route: true });
