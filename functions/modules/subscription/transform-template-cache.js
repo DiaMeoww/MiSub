@@ -29,7 +29,7 @@ function getTemplateCacheConfig(storageAdapter) {
             maxAgeSetting ?? DEFAULT_CACHE_MAX_AGE_SECONDS,
             MIN_CACHE_MAX_AGE_SECONDS,
             MAX_CACHE_MAX_AGE_SECONDS
-        )
+        ),
     };
 }
 
@@ -40,7 +40,7 @@ function isCacheYoungerThan(cacheEntry, maxAgeMs) {
 
 function buildFetchHeaders(cacheEntry) {
     const headers = {
-        'User-Agent': 'MiSub-Template-Fetch/1.0'
+        'User-Agent': 'MiSub-Template-Fetch/1.0',
     };
 
     if (cacheEntry?.etag) {
@@ -60,7 +60,7 @@ function getHeader(response, name) {
 async function putTemplateCache(storageAdapter, cacheKey, cacheEntry, maxAgeSeconds) {
     if (storageAdapter?.kv && typeof storageAdapter.kv.put === 'function') {
         await storageAdapter.kv.put(cacheKey, JSON.stringify(cacheEntry), {
-            expirationTtl: maxAgeSeconds
+            expirationTtl: maxAgeSeconds,
         });
     } else if (storageAdapter && typeof storageAdapter.put === 'function') {
         await storageAdapter.put(cacheKey, cacheEntry);
@@ -74,7 +74,7 @@ function createCacheEntry(templateUrl, nodes, response, previousEntry = null) {
         nodeCount: previousEntry?.nodeCount || 0,
         sources: previousEntry?.sources?.length ? previousEntry.sources : [templateUrl],
         etag: getHeader(response, 'etag') || previousEntry?.etag,
-        lastModified: getHeader(response, 'last-modified') || previousEntry?.lastModified
+        lastModified: getHeader(response, 'last-modified') || previousEntry?.lastModified,
     };
 }
 
@@ -89,25 +89,47 @@ export async function fetchTransformTemplate(storageAdapter, templateUrl, forceR
     let response;
     try {
         response = await fetch(safeTemplateUrl, {
-            headers: forceRefresh ? { 'User-Agent': 'MiSub-Template-Fetch/1.0' } : buildFetchHeaders(cachedTemplate)
+            headers: forceRefresh
+                ? { 'User-Agent': 'MiSub-Template-Fetch/1.0' }
+                : buildFetchHeaders(cachedTemplate),
         });
     } catch (error) {
-        if (cachedTemplate?.nodes && isCacheYoungerThan(cachedTemplate, cacheConfig.maxAgeSeconds * 1000)) {
-            console.warn(`[TemplateCache] Revalidation failed, falling back to cached template: ${error.message}`);
+        if (
+            cachedTemplate?.nodes &&
+            isCacheYoungerThan(cachedTemplate, cacheConfig.maxAgeSeconds * 1000)
+        ) {
+            console.warn(
+                `[TemplateCache] Revalidation failed, falling back to cached template: ${error.message}`
+            );
             return cachedTemplate.nodes;
         }
         throw error;
     }
 
     if (response.status === 304 && cachedTemplate?.nodes) {
-        const refreshedCacheEntry = createCacheEntry(safeTemplateUrl, cachedTemplate.nodes, response, cachedTemplate);
-        await putTemplateCache(storageAdapter, cacheKey, refreshedCacheEntry, cacheConfig.maxAgeSeconds);
+        const refreshedCacheEntry = createCacheEntry(
+            safeTemplateUrl,
+            cachedTemplate.nodes,
+            response,
+            cachedTemplate
+        );
+        await putTemplateCache(
+            storageAdapter,
+            cacheKey,
+            refreshedCacheEntry,
+            cacheConfig.maxAgeSeconds
+        );
         return cachedTemplate.nodes;
     }
 
     if (!response.ok) {
-        if (cachedTemplate?.nodes && isCacheYoungerThan(cachedTemplate, cacheConfig.maxAgeSeconds * 1000)) {
-            console.warn(`[TemplateCache] Template fetch failed with HTTP ${response.status}, falling back to cached template`);
+        if (
+            cachedTemplate?.nodes &&
+            isCacheYoungerThan(cachedTemplate, cacheConfig.maxAgeSeconds * 1000)
+        ) {
+            console.warn(
+                `[TemplateCache] Template fetch failed with HTTP ${response.status}, falling back to cached template`
+            );
             return cachedTemplate.nodes;
         }
         throw new Error(`Template fetch failed: HTTP ${response.status}`);

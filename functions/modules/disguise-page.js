@@ -189,14 +189,14 @@ export function renderDisguisePage() {
         status: 404,
         headers: {
             'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'no-cache'
-        }
+            'Cache-Control': 'no-cache',
+        },
     });
 }
 
 /**
  * 根据配置生成伪装响应 (Redirect 或 404 Page)
- * @param {Object} disguiseConfig 
+ * @param {Object} disguiseConfig
  * @param {string} [baseUrl]
  * @returns {Response}
  */
@@ -206,7 +206,7 @@ export function createDisguiseResponse(disguiseConfig, baseUrl) {
         if (redirectUrl) {
             return new Response(null, {
                 status: 302,
-                headers: { Location: redirectUrl }
+                headers: { Location: redirectUrl },
             });
         }
     }
