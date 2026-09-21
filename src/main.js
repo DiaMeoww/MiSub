@@ -7,6 +7,8 @@ import { handleError, setToastHandler, configureErrorMonitoring } from './utils/
 import { isAppScriptError, isForeignRejection } from './utils/error-source.js';
 import { i18n } from './i18n/index.js';
 import { useToastStore } from './stores/toast.js';
+import { configureUnauthorizedHandler } from './lib/http.js';
+import { isLocalHost, isSameOriginUrl } from './utils/url-origin.js';
 
 // 全局错误处理
 if (typeof window !== 'undefined') {
@@ -57,6 +59,10 @@ if (typeof window !== 'undefined') {
 
     // 处理资源加载错误（忽略第三方资源）
     const assetReloadKey = 'misub:asset-reload';
+    const currentOrigin = window.location.origin;
+    const localHost = isLocalHost(window.location.hostname);
+    const isSameOriginResource = (resourceUrl) =>
+        isSameOriginUrl(resourceUrl, currentOrigin, window.location.href);
     const hasAssetReloaded = () => {
         try {
             return sessionStorage.getItem(assetReloadKey) === '1';
@@ -74,8 +80,13 @@ if (typeof window !== 'undefined') {
     };
 
     const tryRecoverAssetLoad = async (resourceUrl) => {
-        if (!resourceUrl || !resourceUrl.startsWith(window.location.origin)) return false;
-        const resourcePath = resourceUrl.split('?')[0];
+        if (!isSameOriginResource(resourceUrl)) return false;
+        let resourcePath = '';
+        try {
+            resourcePath = new URL(resourceUrl, window.location.href).pathname;
+        } catch {
+            return false;
+        }
         if (!/\/assets\/.+\.(js|css)$/i.test(resourcePath)) return false;
         if (hasAssetReloaded()) return false;
 
@@ -102,7 +113,7 @@ if (typeof window !== 'undefined') {
                 const resourceUrl = event.target.src || event.target.href || '';
 
                 // 忽略第三方资源加载错误（如 Cloudflare Analytics、广告等）
-                const isThirdParty = resourceUrl && !resourceUrl.startsWith(window.location.origin);
+                const isThirdParty = resourceUrl && !isSameOriginResource(resourceUrl);
                 if (isThirdParty) {
                     console.debug(
                         '[Resource Load] Ignoring third-party resource error:',
@@ -132,7 +143,7 @@ if (typeof window !== 'undefined') {
 
                 tryRecoverAssetLoad(resourceUrl).then((recovered) => {
                     if (recovered) return;
-                    if (isLocalHost && /\/assets\/.+\.(js|css)$/i.test(resourceUrl)) {
+                    if (localHost && /\/assets\/.+\.(js|css)$/i.test(resourceUrl)) {
                         console.debug('[Resource Load] Local asset error suppressed:', resourceUrl);
                         return;
                     }
@@ -153,6 +164,10 @@ if (typeof window !== 'undefined') {
 
 const pinia = createPinia();
 const app = createApp(App);
+
+configureUnauthorizedHandler(({ url }) => {
+    window.dispatchEvent(new CustomEvent('misub:unauthorized', { detail: { url } }));
+});
 
 // 全局错误处理插件
 app.config.errorHandler = (error, instance, info) => {
