@@ -8,7 +8,9 @@ import { isAppScriptError, isForeignRejection } from './utils/error-source.js';
 import { i18n } from './i18n/index.js';
 import { useToastStore } from './stores/toast.js';
 import { configureUnauthorizedHandler } from './lib/http.js';
-import { isLocalHost, isSameOriginUrl } from './utils/url-origin.js';
+import { isCriticalAssetPath, isLocalHost, isSameOriginUrl } from './utils/url-origin.js';
+import { isChunkLoadError, shouldReloadForChunkError } from './utils/chunk-reload.js';
+import { readSessionPreference, writeSessionPreference } from './utils/session-preference.js';
 
 // 全局错误处理
 if (typeof window !== 'undefined') {
@@ -16,15 +18,11 @@ if (typeof window !== 'undefined') {
     // 处理未捕获的Promise拒绝
     window.addEventListener('unhandledrejection', (event) => {
         const message = event.reason?.message || '';
-        if (
-            message.includes('Failed to fetch dynamically imported module') ||
-            message.includes('error loading dynamically imported module')
-        ) {
-            const reloadKey = 'misub:chunk-reload';
-            if (sessionStorage.getItem(reloadKey) !== '1') {
-                sessionStorage.setItem(reloadKey, '1');
-                window.location.reload();
-            }
+        // 发版后旧页面拿不到已删除的 chunk：重载一次（见 utils/chunk-reload.js）。
+        // 注意不要在这里 return —— 本次会话已经重载过时不会再次重载，
+        // 此时需要继续往下走到 handleError，让用户知道加载失败了。
+        if (isChunkLoadError(message) && shouldReloadForChunkError()) {
+            window.location.reload();
         }
         // 浏览器扩展注入脚本 / 跨域第三方脚本导致的拒绝与自己无关（如扩展的
         // reportAllChanges TypeError）。静默丢弃：preventDefault 同时抑制
@@ -63,21 +61,10 @@ if (typeof window !== 'undefined') {
     const localHost = isLocalHost(window.location.hostname);
     const isSameOriginResource = (resourceUrl) =>
         isSameOriginUrl(resourceUrl, currentOrigin, window.location.href);
-    const hasAssetReloaded = () => {
-        try {
-            return sessionStorage.getItem(assetReloadKey) === '1';
-        } catch (error) {
-            console.warn('[Resource Load] Failed to read sessionStorage:', error);
-            return false;
-        }
-    };
-    const markAssetReloaded = () => {
-        try {
-            sessionStorage.setItem(assetReloadKey, '1');
-        } catch (error) {
-            console.warn('[Resource Load] Failed to write sessionStorage:', error);
-        }
-    };
+    // 只有打包产物里的 JS/CSS 失败才值得「清缓存重载」与错误上报，
+    // 判定逻辑见 utils/url-origin.js 的 isCriticalAssetPath。
+    const hasAssetReloaded = () => readSessionPreference(assetReloadKey) === '1';
+    const markAssetReloaded = () => writeSessionPreference(assetReloadKey, '1');
 
     const tryRecoverAssetLoad = async (resourceUrl) => {
         if (!isSameOriginResource(resourceUrl)) return false;
@@ -87,10 +74,17 @@ if (typeof window !== 'undefined') {
         } catch {
             return false;
         }
-        if (!/\/assets\/.+\.(js|css)$/i.test(resourcePath)) return false;
+        if (!isCriticalAssetPath(resourcePath)) return false;
         if (hasAssetReloaded()) return false;
 
-        markAssetReloaded();
+        // 写不进标记就绝不能重载：站点数据被禁用时 sessionStorage 不可用，
+        // 「已重载过」永远读不到，于是每次重载都会再次走到这里 →
+        // 「加载失败 → 重载 → 仍然失败 → 再重载」无限刷新（实测 5 秒 62 次）。
+        // 宁可放弃自动恢复，也不能把用户卡在刷新循环里。
+        if (!markAssetReloaded()) {
+            console.warn('[Resource Load] Cannot persist reload marker, skip auto recovery');
+            return false;
+        }
         try {
             if ('caches' in window) {
                 const cacheKeys = await caches.keys();
@@ -143,7 +137,25 @@ if (typeof window !== 'undefined') {
 
                 tryRecoverAssetLoad(resourceUrl).then((recovered) => {
                     if (recovered) return;
-                    if (localHost && /\/assets\/.+\.(js|css)$/i.test(resourceUrl)) {
+
+                    // 非 JS/CSS 资源（图片、字体、manifest 等）加载失败不影响应用运行，
+                    // 也不该弹「请尝试刷新页面」——刷新解决不了，反而会误报服务端有意返回的
+                    // 品牌资源 404，把正常的伪装行为说成故障。
+                    let resourcePath = '';
+                    try {
+                        resourcePath = new URL(resourceUrl, window.location.href).pathname;
+                    } catch {
+                        console.debug('[Resource Load] Unresolvable resource error:', resourceUrl);
+                        return;
+                    }
+                    if (!isCriticalAssetPath(resourcePath)) {
+                        console.debug(
+                            '[Resource Load] Non-critical resource error suppressed:',
+                            resourceUrl
+                        );
+                        return;
+                    }
+                    if (localHost) {
                         console.debug('[Resource Load] Local asset error suppressed:', resourceUrl);
                         return;
                     }

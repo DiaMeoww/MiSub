@@ -5,6 +5,18 @@ export const messages = {
             home: '首页',
             language: '语言',
         },
+        // 路由页标题。路由表是模块级常量，只会在启动时求值一次，
+        // 所以那里存的是 key，实际文案由 router 的 translateRouteTitle 按当前语言解析。
+        pageTitles: {
+            home: '首页',
+            publicPage: '公开页',
+            dashboard: '仪表盘',
+            groups: '订阅组',
+            nodes: '手动节点',
+            subscriptions: '我的订阅',
+            settings: '设置',
+            login: '登录',
+        },
         nav: {
             dashboard: '仪表盘',
             groups: '机场订阅',
@@ -480,6 +492,17 @@ export const messages = {
             passwordWeak: '密码强度弱',
             passwordMedium: '密码强度中等',
             passwordStrong: '密码强度强',
+            fieldRequired: '{field}不能为空',
+            invalidUrl: '请输入有效的URL',
+            invalidEmail: '请输入有效的邮箱地址',
+            invalidNodeUrl: '请输入有效的节点URL',
+            minLength: '最少需要 {count} 个字符',
+            maxLength: '最多允许 {count} 个字符',
+            subscriptionNameRequired: '订阅名称不能为空',
+            subscriptionUrlRequired: '订阅URL不能为空',
+            profileNameRequired: '配置名称不能为空',
+            templateNameEmpty: '模板名称不能为空',
+            invalidTransformUrl: '请输入有效的外部规则模板URL，或留空使用内置模板',
         },
         utils: {
             invalidAddressOrPort: '无效的地址或端口',
@@ -523,6 +546,8 @@ export const messages = {
                 dismiss: '忽略',
                 dismissItem: '从列表中忽略该项（仅影响本机显示）',
                 restoreDismissed: '已忽略 {count} 项，点击恢复',
+                dismissFailed: '忽略状态同步失败，请稍后重试',
+                restoreFailed: '恢复已忽略的项失败，请稍后重试',
             },
             healthItems: {
                 missingSubscriptions: {
@@ -1377,6 +1402,149 @@ export const messages = {
             plainTextDesc: '每行一个完整节点URL',
             protocols: '支持协议',
         },
+        transformSelector: {
+            customPlaceholder: '输入外部规则模板 URL',
+            unnamedTemplate: '未命名自定义规则模板',
+            customTemplateGroup: '自定义规则模板',
+            customTemplateDescription: '本地保存的自定义规则模板',
+            otherGroup: '其他',
+            helperCustomTemplatesOnly: '仅可选择已保存的 custom: 自定义规则模板。',
+            helperExcludeBuiltin:
+                '第三方订阅转换仅支持远程模板 URL，无法兼容 MiSub 内置规则、内置预设和本地 custom: 模板。',
+            helperDefault: '适用于统一模板渲染。',
+            thirdPartyNotice:
+                '使用第三方订阅转换时，无法兼容 MiSub 内置规则、内置预设和本地 custom: 模板。请使用远程预设模板或自定义 URL。',
+            defaultGlobalOption: '默认 / 全局设置',
+            pleaseSelect: '请选择...',
+            customInputOption: '自定义输入...',
+            currentCustomValue: '当前自定义值',
+            currentValue: '当前值',
+            missingTemplatePrefix: '当前引用的自定义规则模板不存在或已停用：',
+            missingTemplateSuffix: '。请选择一个已保存且启用的 custom: 模板。',
+            templateVariablesTitle: '模板变量说明',
+            exampleLabel: '示例',
+            varGroupBasic: '基础变量',
+            varGroupStrategy: '策略组变量',
+            varGroupDetail: '分组明细变量',
+            varProxies: '代理节点片段',
+            varRules: '规则片段',
+            varFileName: '配置文件名（同 <%fileName%>）',
+            varTargetFormat: '目标格式（同 <%targetFormat%>）',
+            varNodeCount: '节点数量（同 <%nodeCount%>）',
+            varPrimaryStrategyChain: '主策略组完整候选链（同 <%primaryStrategyChain%>）',
+            varRegionStrategyChain: '地区策略组候选链（同 <%regionStrategyChain%>）',
+            varProtocolStrategyChain: '协议策略组候选链（同 <%protocolStrategyChain%>）',
+            varAllStrategyGroups: '所有策略组名称集合（同 <%allStrategyGroups%>）',
+            varRegionGroupNames: '地区策略组名称列表（同 <%regionGroupNames%>）',
+            varRegionGroupCounts: '地区策略组节点数量（同 <%regionGroupCounts%>）',
+            varRegionGroupList: '地区策略组逐行清单（同 <%regionGroupList%>）',
+            varProtocolGroupNames: '协议策略组名称列表（同 <%protocolGroupNames%>）',
+            varProtocolGroupCounts: '协议策略组节点数量（同 <%protocolGroupCounts%>）',
+            varProtocolGroupList: '协议策略组逐行清单（同 <%protocolGroupList%>）',
+        },
+        transformAssets: {
+            builtinMinimal: {
+                name: 'MiSub 内置 极简默认分流',
+                description: 'MiSub 自带的默认极简模板，适合日常通用、新手用户和优先稳定的场景。',
+            },
+            acl4ssrLite: {
+                name: 'MiSub 内置 ACL4SSR 精简分流',
+                description:
+                    '内置精简 ACL4SSR 分流模板，适合习惯 ACL4SSR 规则且希望保持轻量的用户。',
+            },
+            mediaAi: {
+                name: 'MiSub 内置 流媒体与 AI 分流',
+                description: '面向流媒体和 AI 服务使用场景的内置模板，保留核心分流和地区候选链。',
+            },
+            acl4ssrFull: {
+                name: 'MiSub 内置 ACL4SSR 完整分流',
+                description:
+                    '内置完整 ACL4SSR 分流模板，可通过统一模板模型生成 Clash 与 Sing-Box 配置。',
+            },
+            cmOnlineDefault: {
+                name: 'CM_Online 默认版 识别港美地区(与Github同步)',
+                description: '经典 ACL4SSR 规则，适合 Clash 系列客户端。',
+            },
+            cmOnlineMultiCountry: {
+                name: 'CM_Online_MultiCountry 识别港美地区 负载均衡(与Github同步)',
+                description: '适合需要多地区自动分组和负载均衡的 Clash 用户。',
+            },
+            cmOnlineMultiCountryCf: {
+                name: 'CM_Online_MultiCountry_CF 识别港美地区、CloudFlareCDN 负载均衡 Worker节点专用(与Github同步)',
+                description: 'Cloudflare Worker 节点场景专用的 Clash 预设。',
+            },
+            cmOnlineFull: {
+                name: 'CM_Online_Full 识别多地区分组(与Github同步)',
+                description: '规则更完整，分组更细，适合作为 Clash 进阶预设。',
+            },
+            cmOnlineFullCf: {
+                name: 'CM_Online_Full_CF 识别多地区、CloudFlareCDN 分组 Worker节点专用(与Github同步)',
+                description: '面向 Worker/CDN 线路的完整 Clash 预设。',
+            },
+            cmOnlineFullMultiMode: {
+                name: 'CM_Online_Full_MultiMode 识别多地区 负载均衡(与Github同步)',
+                description: '适合需要完整规则和多模式分组的 Clash 用户。',
+            },
+            cmOnlineFullMultiModeCf: {
+                name: 'CM_Online_Full_MultiMode_CF 识别多地区、CloudFlareCDN 负载均衡 Worker节点专用(与Github同步)',
+                description: '完整多模式的 Worker/CDN Clash 预设。',
+            },
+        },
+        d1Migration: {
+            startUpgrade: '开始升级',
+            upgrading: '升级中...',
+            finish: '完成',
+            migrateFailed: '迁移失败',
+            logLegacyDetected: '检测到旧版 D1 main 行结构，开始升级为行级存储...',
+            logLegacySubscriptions: '✅ 订阅数据已迁移 {count} 条',
+            logLegacyProfiles: '✅ 订阅组数据已迁移 {count} 条',
+            logLegacyCompleted: '🎉 旧 D1 结构升级完成，后续将使用行级存储读取。',
+            toastLegacySuccess: '旧 D1 结构已成功升级',
+            logUpgradeFailed: '❌ 升级失败: {message}',
+            toastLegacyFailed: '旧 D1 结构升级失败: {message}',
+            logStart: '开始迁移流程...',
+            logConnecting: '正在连接后端接口...',
+            logConnected: '连接成功，收到后端响应。',
+            logSubscriptionsOk: '✅ 订阅数据迁移成功',
+            logSubscriptionsSkipped: '⚠️ 无订阅数据或迁移跳过',
+            logProfilesOk: '✅ 配置文件迁移成功',
+            logProfilesSkipped: '⚠️ 无配置文件或迁移跳过',
+            logSettingsOk: '✅ 系统设置迁移成功',
+            logSettingsSkipped: '⚠️ 无系统设置或迁移跳过',
+            logAllDone: '🎉 所有步骤完成！正在切换存储模式...',
+            logMigrateFailed: '❌ 迁移失败: {message}',
+            logErrorDetail: '   - 错误详情: {detail}',
+            logException: '❌ 发生异常: {message}',
+            hintCheckSchema: '请检查 D1 数据库是否已初始化，表结构是否完整。',
+            hintRunSchema: '若未执行 SQL 脚本，先点击「复制 SQL 脚本内容」并在 D1 Console 执行。',
+            hintCheckBinding: '提示：若仍失败，请确认 MISUB_DB 绑定与 D1 表创建权限。',
+            toastMigrateFailed: '迁移失败: {message}',
+            logFinished: '流程结束。',
+            copyFailed: '复制失败，请手动复制文件内容',
+            legacyTitle: '检测到旧 D1 数据结构',
+            legacyIntro:
+                '当前检测到旧版 D1 主行数据结构。为了避免读取遗漏并提升后续性能，建议立即升级为新的行级存储结构。',
+            legacyHasSubscriptions: '• 检测到旧版订阅主行数据',
+            legacyHasProfiles: '• 检测到旧版订阅组主行数据',
+            legacyNoDataChange: '• 升级后不会改变你现有的数据内容，只会调整存储结构',
+            legacyDoneHint: '升级完成，建议刷新后台以重新加载最新数据。',
+            migrating: '迁移中...',
+            done: '完成',
+            title: 'D1 数据库迁移',
+            precheckHeading: '准备工作检查',
+            copySchemaButton: '复制 SQL 脚本内容',
+            confirmNotice: '点击「开始迁移」即表示您已确认上述配置无误。',
+            successNotice: '迁移成功！点击「完成」关闭窗口并刷新页面。',
+            introText:
+                '即将把所有 KV 存储的数据迁移到 D1 数据库。此操作不可逆，迁移成功后系统将自动切换到 D1 模式。',
+            confirmChecklist: '请务必确认您已完成以下操作：',
+            stepCreateDb: '在 Cloudflare 后台创建 D1 数据库',
+            stepBindDbPrefix: '在 Pages 设置中绑定 D1 数据库变量为',
+            stepBindDbSuffix: '',
+            stepRunSchema: '重要：已在 D1 Console 中执行 SQL 建表脚本',
+            waiting: '等待开始...',
+            errorNotice: '迁移遇到错误，请检查日志并修复问题后重试。',
+        },
         fileImport: {
             dropHint: '点击选择文件，或将文件拖拽到此处',
             supportedTypes: '支持 .txt / .yaml / .yml / .json / .conf，可多选；自动识别其中的节点',
@@ -1391,6 +1559,8 @@ export const messages = {
             fmtSurgeDesc: '代理段配置',
             fmtJson: 'JSON',
             fmtJsonDesc: 'Clash Meta 配置或节点数组',
+            readFailed: '读取文件失败',
+            tooLarge: '文件过大（{size}MB），请拆分后导入或使用单文件小于 {limit}MB 的文件',
         },
         importNodes: {
             readingFile: '正在读取文件...',
@@ -1447,6 +1617,24 @@ export const messages = {
             scanToImport: '扫描二维码导入订阅',
             downloadQr: '下载二维码',
             noDescription: '暂无简介',
+        },
+        errors: {
+            timeout: '请求超时，请稍后重试',
+            resourceLoadIntercepted:
+                '资源加载失败 ({fileName})。可能是浏览器隐私设置或扩展拦截了部分资源。',
+            resourceLoad: '资源加载失败 ({fileName})，请尝试强制刷新页面（Ctrl/Cmd + Shift + R）',
+            chunkLoadFailed: '页面版本已更新，请刷新页面后重试',
+            network: '网络连接失败，请检查网络',
+            unauthorized: '认证失败，请重新登录',
+            kvMissing: '服务端存储未初始化，请联系管理员配置 KV 绑定',
+            d1Missing: '服务端数据库未初始化，请联系管理员配置 D1 绑定',
+            saveFailed: '数据保存失败，请稍后重试',
+            subscriptionFailed: '订阅更新失败，请稍后重试',
+            batchFailed: '批量操作失败，已降级为逐个处理',
+            generic: '操作失败，请稍后重试',
+            preferenceNotSaved: '当前浏览器禁用了本地存储，该设置无法长期保存',
+            unknown: '未知错误',
+            requestFailedWithStatus: '请求失败 ({status})',
         },
         common: {
             searchPlaceholder: '搜索...',
@@ -1566,6 +1754,16 @@ export const messages = {
             name: 'MiSub',
             home: 'Home',
             language: 'Language',
+        },
+        pageTitles: {
+            home: 'Home',
+            publicPage: 'Public page',
+            dashboard: 'Dashboard',
+            groups: 'Subscription groups',
+            nodes: 'Manual nodes',
+            subscriptions: 'My subscriptions',
+            settings: 'Settings',
+            login: 'Sign in',
         },
         nav: {
             dashboard: 'Dashboard',
@@ -1900,7 +2098,7 @@ export const messages = {
             subscriptionTitle: 'Source node preview - {name}',
             unknownSubscription: 'Unknown source',
             missingParams: 'Missing required parameters',
-            fetchFailed: 'Failed to fetch nodes',
+            fetchFailed: 'Could not load nodes',
             authAbnormal: 'Auth issue. Refresh and retry.',
             authFailed: 'Auth failed. Log in again.',
             networkFailed: 'Network failed. Check connection.',
@@ -2112,6 +2310,18 @@ export const messages = {
             passwordWeak: 'Weak password',
             passwordMedium: 'Medium password',
             passwordStrong: 'Strong password',
+            fieldRequired: '{field} is required',
+            invalidUrl: 'Please enter a valid URL',
+            invalidEmail: 'Please enter a valid email address',
+            invalidNodeUrl: 'Please enter a valid node URL',
+            minLength: 'At least {count} characters required',
+            maxLength: 'At most {count} characters allowed',
+            subscriptionNameRequired: 'Subscription name is required',
+            subscriptionUrlRequired: 'Subscription URL is required',
+            profileNameRequired: 'Profile name is required',
+            templateNameEmpty: 'Template name is required',
+            invalidTransformUrl:
+                'Please enter a valid external rule template URL, or leave it empty to use a built-in template',
         },
         utils: {
             invalidAddressOrPort: 'Invalid address or port',
@@ -2155,6 +2365,8 @@ export const messages = {
                 dismiss: 'Dismiss',
                 dismissItem: 'Hide this item locally',
                 restoreDismissed: '{count} dismissed — restore',
+                dismissFailed: 'Failed to sync the dismissal. Please try again later.',
+                restoreFailed: 'Failed to restore dismissed items. Please try again later.',
             },
             healthItems: {
                 missingSubscriptions: {
@@ -3059,6 +3271,169 @@ export const messages = {
             plainTextDesc: 'one full node URL per line',
             protocols: 'Supported protocols',
         },
+        transformSelector: {
+            customPlaceholder: 'Enter external rule template URL',
+            unnamedTemplate: 'Unnamed custom rule template',
+            customTemplateGroup: 'Custom rule templates',
+            customTemplateDescription: 'Locally saved custom rule template',
+            otherGroup: 'Other',
+            helperCustomTemplatesOnly: 'Only saved custom: rule templates can be selected.',
+            helperExcludeBuiltin:
+                'Third-party subconverter only supports remote template URLs; MiSub built-in rules, built-in presets and local custom: templates are not compatible.',
+            helperDefault: 'Used for unified template rendering.',
+            thirdPartyNotice:
+                'When using a third-party subconverter, MiSub built-in rules, built-in presets and local custom: templates are not compatible. Please use a remote preset template or a custom URL.',
+            defaultGlobalOption: 'Default / Global settings',
+            pleaseSelect: 'Please select...',
+            customInputOption: 'Custom input...',
+            currentCustomValue: 'Current custom value',
+            currentValue: 'Current value',
+            missingTemplatePrefix:
+                'The referenced custom rule template does not exist or has been disabled: ',
+            missingTemplateSuffix: '. Please select a saved and enabled custom: template.',
+            templateVariablesTitle: 'Template variables',
+            exampleLabel: 'Example',
+            varGroupBasic: 'Basic variables',
+            varGroupStrategy: 'Strategy group variables',
+            varGroupDetail: 'Group detail variables',
+            varProxies: 'Proxy node snippet',
+            varRules: 'Rule snippet',
+            varFileName: 'Config file name (same as <%fileName%>)',
+            varTargetFormat: 'Target format (same as <%targetFormat%>)',
+            varNodeCount: 'Node count (same as <%nodeCount%>)',
+            varPrimaryStrategyChain:
+                'Full candidate chain of the primary strategy group (same as <%primaryStrategyChain%>)',
+            varRegionStrategyChain:
+                'Candidate chain of the region strategy group (same as <%regionStrategyChain%>)',
+            varProtocolStrategyChain:
+                'Candidate chain of the protocol strategy group (same as <%protocolStrategyChain%>)',
+            varAllStrategyGroups: 'All strategy group names (same as <%allStrategyGroups%>)',
+            varRegionGroupNames: 'Region strategy group name list (same as <%regionGroupNames%>)',
+            varRegionGroupCounts:
+                'Region strategy group node counts (same as <%regionGroupCounts%>)',
+            varRegionGroupList:
+                'Region strategy group line-by-line list (same as <%regionGroupList%>)',
+            varProtocolGroupNames:
+                'Protocol strategy group name list (same as <%protocolGroupNames%>)',
+            varProtocolGroupCounts:
+                'Protocol strategy group node counts (same as <%protocolGroupCounts%>)',
+            varProtocolGroupList:
+                'Protocol strategy group line-by-line list (same as <%protocolGroupList%>)',
+        },
+        transformAssets: {
+            builtinMinimal: {
+                name: 'MiSub Builtin — Minimal Default Routing',
+                description:
+                    'MiSub built-in minimal default template, suited to everyday use, beginners and stability-first scenarios.',
+            },
+            acl4ssrLite: {
+                name: 'MiSub Builtin — ACL4SSR Lite Routing',
+                description:
+                    'Built-in lite ACL4SSR routing template for users familiar with ACL4SSR rules who prefer to stay lightweight.',
+            },
+            mediaAi: {
+                name: 'MiSub Builtin — Streaming & AI Routing',
+                description:
+                    'Built-in template for streaming and AI service scenarios, keeping the core routing and region candidate chains.',
+            },
+            acl4ssrFull: {
+                name: 'MiSub Builtin — ACL4SSR Full Routing',
+                description:
+                    'Built-in full ACL4SSR routing template that can generate Clash and Sing-Box configs through the unified template model.',
+            },
+            cmOnlineDefault: {
+                name: 'CM_Online Default — detects HK/US regions (synced with GitHub)',
+                description: 'Classic ACL4SSR rules, suited to Clash family clients.',
+            },
+            cmOnlineMultiCountry: {
+                name: 'CM_Online_MultiCountry — detects HK/US regions, load balancing (synced with GitHub)',
+                description:
+                    'For Clash users who need automatic multi-region grouping and load balancing.',
+            },
+            cmOnlineMultiCountryCf: {
+                name: 'CM_Online_MultiCountry_CF — detects HK/US regions, CloudFlareCDN load balancing, for Worker nodes (synced with GitHub)',
+                description: 'Clash preset dedicated to Cloudflare Worker node scenarios.',
+            },
+            cmOnlineFull: {
+                name: 'CM_Online_Full — detects multi-region grouping (synced with GitHub)',
+                description:
+                    'More complete rules with finer grouping; a good advanced Clash preset.',
+            },
+            cmOnlineFullCf: {
+                name: 'CM_Online_Full_CF — detects multi-region, CloudFlareCDN grouping, for Worker nodes (synced with GitHub)',
+                description: 'Complete Clash preset for Worker/CDN routes.',
+            },
+            cmOnlineFullMultiMode: {
+                name: 'CM_Online_Full_MultiMode — detects multi-region, load balancing (synced with GitHub)',
+                description: 'For Clash users who need complete rules and multi-mode grouping.',
+            },
+            cmOnlineFullMultiModeCf: {
+                name: 'CM_Online_Full_MultiMode_CF — detects multi-region, CloudFlareCDN load balancing, for Worker nodes (synced with GitHub)',
+                description: 'Complete multi-mode Worker/CDN Clash preset.',
+            },
+        },
+        d1Migration: {
+            startUpgrade: 'Start upgrade',
+            upgrading: 'Upgrading...',
+            finish: 'Done',
+            migrateFailed: 'Migration failed',
+            logLegacyDetected:
+                'Legacy D1 single-row structure detected. Upgrading to row-level storage...',
+            logLegacySubscriptions: '✅ Migrated {count} subscription(s)',
+            logLegacyProfiles: '✅ Migrated {count} subscription group(s)',
+            logLegacyCompleted:
+                '🎉 Legacy D1 structure upgraded. Row-level storage will be used from now on.',
+            toastLegacySuccess: 'Legacy D1 structure upgraded successfully',
+            logUpgradeFailed: '❌ Upgrade failed: {message}',
+            toastLegacyFailed: 'Legacy D1 upgrade failed: {message}',
+            logStart: 'Starting migration...',
+            logConnecting: 'Connecting to the backend...',
+            logConnected: 'Connected. Backend responded.',
+            logSubscriptionsOk: '✅ Subscriptions migrated',
+            logSubscriptionsSkipped: '⚠️ No subscription data, or migration skipped',
+            logProfilesOk: '✅ Profiles migrated',
+            logProfilesSkipped: '⚠️ No profile data, or migration skipped',
+            logSettingsOk: '✅ Settings migrated',
+            logSettingsSkipped: '⚠️ No settings data, or migration skipped',
+            logAllDone: '🎉 All steps completed. Switching storage mode...',
+            logMigrateFailed: '❌ Migration failed: {message}',
+            logErrorDetail: '   - Detail: {detail}',
+            logException: '❌ Unexpected error: {message}',
+            hintCheckSchema:
+                'Check that the D1 database is initialised and the schema is complete.',
+            hintRunSchema:
+                'If you have not run the SQL script yet, click "Copy SQL script" and run it in the D1 console.',
+            hintCheckBinding:
+                'Tip: if it still fails, verify the MISUB_DB binding and D1 table creation permission.',
+            toastMigrateFailed: 'Migration failed: {message}',
+            logFinished: 'Finished.',
+            copyFailed: 'Copy failed. Please copy the file content manually.',
+            legacyTitle: 'Legacy D1 data structure detected',
+            legacyIntro:
+                'A legacy single-row D1 structure was detected. To avoid missing reads and improve performance, we recommend upgrading to the new row-level storage structure now.',
+            legacyHasSubscriptions: '• Legacy subscription main-row data detected',
+            legacyHasProfiles: '• Legacy subscription-group main-row data detected',
+            legacyNoDataChange:
+                '• Your existing data will not be changed — only the storage structure is adjusted',
+            legacyDoneHint: 'Upgrade complete. Refresh the dashboard to reload the latest data.',
+            migrating: 'Migrating...',
+            done: 'Done',
+            title: 'D1 database migration',
+            precheckHeading: 'Pre-flight checks',
+            copySchemaButton: 'Copy SQL script',
+            confirmNotice:
+                'Clicking "Start migration" confirms that the configuration above is correct.',
+            successNotice: 'Migration succeeded! Click "Done" to close and refresh the page.',
+            introText:
+                'All data currently in KV storage will be migrated to the D1 database. This cannot be undone; once migration succeeds the system switches to D1 mode automatically.',
+            confirmChecklist: 'Please make sure you have completed the following:',
+            stepCreateDb: 'Created a D1 database in the Cloudflare dashboard',
+            stepBindDbPrefix: 'Bound the D1 database variable to',
+            stepBindDbSuffix: 'in Pages settings',
+            stepRunSchema: 'Important: the SQL schema script has been run in the D1 console',
+            waiting: 'Waiting to start...',
+            errorNotice: 'Migration hit an error. Check the log, fix the issue, then retry.',
+        },
         fileImport: {
             dropHint: 'Click to choose files, or drag them here',
             supportedTypes:
@@ -3074,6 +3449,9 @@ export const messages = {
             fmtSurgeDesc: 'proxy section config',
             fmtJson: 'JSON',
             fmtJsonDesc: 'Clash Meta config or an array of nodes',
+            readFailed: 'Failed to read the file',
+            tooLarge:
+                'File is too large ({size}MB). Split it, or use a single file smaller than {limit}MB.',
         },
         importNodes: {
             readingFile: 'Reading file...',
@@ -3090,11 +3468,11 @@ export const messages = {
             fetchingSubscription: 'Fetching subscription...',
             parsingSubscription: 'Parsing subscription...',
             invalidUrl: 'Enter a valid HTTP or HTTPS subscription URL.',
-            requestTimeout: 'Request timed out. Check your network connection and try again.',
+            requestTimeout: 'Request timed out. Please try again.',
             contentTooLarge: 'The subscription is too large. Use a smaller subscription URL.',
             dnsFailed: 'DNS lookup failed. Check that the subscription URL is correct.',
             serverError: 'Server error, please try again later.',
-            fetchFailed: 'Failed to fetch the subscription',
+            fetchFailed: 'Could not load the subscription content',
             parseSubscriptionFailed: 'Failed to parse the subscription',
             noValidNodesFromSubscription:
                 'No valid nodes could be parsed from the subscription. Check that the link contains a supported node format.',
@@ -3132,6 +3510,28 @@ export const messages = {
             scanToImport: 'Scan the QR code to import the subscription',
             downloadQr: 'Download QR code',
             noDescription: 'No description yet',
+        },
+        errors: {
+            timeout: 'The request timed out. Please try again later.',
+            resourceLoadIntercepted:
+                'Failed to load a resource ({fileName}). Browser privacy settings or an extension may be blocking some resources.',
+            resourceLoad:
+                'Failed to load a resource ({fileName}). Try a hard refresh (Ctrl/Cmd + Shift + R).',
+            chunkLoadFailed: 'The app has been updated. Please refresh the page and try again.',
+            network: 'Network connection failed. Please check your connection.',
+            unauthorized: 'Authentication failed. Please sign in again.',
+            kvMissing:
+                'Server storage is not initialised. Ask the administrator to configure the KV binding.',
+            d1Missing:
+                'Server database is not initialised. Ask the administrator to configure the D1 binding.',
+            saveFailed: 'Failed to save data. Please try again later.',
+            subscriptionFailed: 'Failed to update subscriptions. Please try again later.',
+            batchFailed: 'Batch operation failed and fell back to processing items one by one.',
+            generic: 'The operation failed. Please try again later.',
+            preferenceNotSaved:
+                'Local storage is disabled in this browser — this setting will not persist',
+            unknown: 'Unknown error',
+            requestFailedWithStatus: 'Request failed ({status})',
         },
         common: {
             searchPlaceholder: 'Search...',

@@ -13,7 +13,8 @@
     import NavBar from './components/layout/NavBar.vue';
     import { detectLegacyD1 } from './lib/api.js';
     import { useI18n } from './i18n/index.js';
-    import { configureAuthGuard } from './router/index.js';
+    import { configureAuthGuard, translateRouteTitle } from './router/index.js';
+    import { readSessionPreference } from './utils/session-preference.js';
 
     // Lazy components
     const Login = defineAsyncComponent(() => import('./components/modals/Login.vue'));
@@ -35,7 +36,7 @@
 
     const route = useRoute();
     const router = useRouter();
-    const { t } = useI18n();
+    const { t, locale } = useI18n();
     const themeStore = useThemeStore();
     const { theme } = storeToRefs(themeStore);
     const { initTheme } = themeStore;
@@ -70,12 +71,8 @@
             if (normalized && normalized !== 'login') return `/${normalized}`;
         }
 
-        try {
-            const rememberedPath = sessionStorage.getItem('misub:login-path');
-            if (rememberedPath && rememberedPath.startsWith('/')) return rememberedPath;
-        } catch {
-            // Ignore storage failures and use the default entry.
-        }
+        const rememberedPath = readSessionPreference('misub:login-path');
+        if (rememberedPath && rememberedPath.startsWith('/')) return rememberedPath;
         return '/login';
     });
 
@@ -170,10 +167,12 @@
             route.fullPath,
             sessionStore.publicConfig?.customPage?.enabled,
             sessionStore.publicConfig?.customPage?.hideBranding,
+            // 切换语言时也要重算标题，否则会一直停在启动时的语言
+            locale.value,
         ],
         () => {
             if (typeof document === 'undefined') return;
-            const rawTitle = route.meta?.title ? String(route.meta.title) : '';
+            const rawTitle = translateRouteTitle(route, t);
             document.title = shouldHidePublicBranding.value
                 ? rawTitle || document.title || ''
                 : rawTitle
