@@ -37,6 +37,35 @@ const base64UrlSafeEncode = (value) =>
         .replace(/=+$/g, '');
 
 describe('protocol conversion fixtures', () => {
+    it('brackets bare IPv6 servers in Clash proxy URLs and round-trips them', () => {
+        expectRoundTrip(
+            {
+                name: 'IPv6 VLESS',
+                type: 'vless',
+                server: '2001:db8::1',
+                port: 443,
+                uuid: '00000000-0000-0000-0000-000000000001',
+            },
+            {
+                name: 'IPv6 VLESS',
+                type: 'vless',
+                server: '2001:db8::1',
+                port: 443,
+            }
+        );
+    });
+
+    it('parses plain HTTP proxy URIs as HTTP proxies with credentials', () => {
+        expectParseOnly('http://alice:p%40ss%3Aword@proxy.example.com:8080#plain-http', {
+            name: 'plain-http',
+            type: 'http',
+            server: 'proxy.example.com',
+            port: 8080,
+            username: 'alice',
+            password: 'p@ss:word',
+        });
+    });
+
     it('preserves common proxy fields across Clash proxy -> URL -> Clash proxy round trips', () => {
         const fixtures = [
             {
@@ -584,6 +613,33 @@ proxies:
         });
     });
 
+    it('preserves Hysteria2 port hopping through URL and builtin Clash output', () => {
+        const clashConfig = `
+proxies:
+  - name: HY2 hopping
+    type: hysteria2
+    server: hy2.example.com
+    port: 443
+    password: secret
+    ports: 20000-30000
+    hop-interval: 30
+`;
+
+        const nodes = extractValidNodes(clashConfig);
+        expect(nodes).toHaveLength(1);
+        expect(nodes[0]).toContain('ports=20000-30000');
+        expect(nodes[0]).toContain('hop-interval=30');
+
+        const fullConfig = yaml.load(
+            generateBuiltinClashConfig(nodes.join('\n'), { addFlagEmoji: false })
+        );
+        expect(fullConfig.proxies[0]).toMatchObject({
+            type: 'hysteria2',
+            ports: '20000-30000',
+            'hop-interval': '30',
+        });
+    });
+
     it('preserves Hysteria2 options from Clash YAML through URL and builtin Clash output', () => {
         const clashConfig = `
 proxies:
@@ -686,8 +742,17 @@ proxies:
             for (const part of fixture.requiredParts) {
                 expect(url).toContain(part);
             }
-            expect(urlToClashProxy(url)).toBeNull();
-            expect(urlsToClashProxies([url])).toEqual([]);
+            if (fixture.proxy.type === 'http') {
+                expect(urlToClashProxy(url)).toMatchObject({
+                    type: 'http',
+                    username: 'user',
+                    password: 'p@ss:word',
+                });
+                expect(urlsToClashProxies([url])).toHaveLength(1);
+            } else {
+                expect(urlToClashProxy(url)).toBeNull();
+                expect(urlsToClashProxies([url])).toEqual([]);
+            }
         }
     });
 });

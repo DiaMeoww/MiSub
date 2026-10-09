@@ -54,14 +54,52 @@ describe('订阅源按站点折叠', () => {
         // 三张卡片都在（折叠但已渲染），且出现数量徽标 3
         expect(wrapper.findAll('.stub-card')).toHaveLength(3);
         expect(wrapper.html()).toContain('>3<');
+        const groupToggle = wrapper.find('[aria-expanded="false"]');
+        expect(groupToggle.exists()).toBe(true);
+        expect(groupToggle.attributes('aria-expanded')).toBe('false');
+        expect(wrapper.findAll('.stub-card')[0].element.parentElement.parentElement.style.display).toBe('none');
         // 有可折叠分组时会出现「折叠全部」
         expect(wrapper.html()).toMatch(/折叠全部|Collapse all/);
+    });
+
+    it('用户展开分组后，分页/列表更新不会再次自动收起该站点', async () => {
+        const subs = [
+            makeSub('a', 's1', 'https://same.example.com/1'),
+            makeSub('b', 's2', 'https://same.example.com/2'),
+        ];
+        const wrapper = mountPanel(subs);
+        await wrapper.find('[aria-expanded="false"]').trigger('click');
+        expect(wrapper.find('[aria-expanded="true"]').exists()).toBe(true);
+
+        await wrapper.setProps({ paginatedSubscriptions: [...subs] });
+        expect(wrapper.find('[aria-expanded="true"]').exists()).toBe(true);
+    });
+
+    it('用户展开后搜索过滤与分页切换仍按当前页合组且不重置展开状态', async () => {
+        const subs = [
+            makeSub('a', 's1', 'https://api.foo.example.com/1'),
+            makeSub('b', 's2', 'https://sub.foo.example.com/2'),
+            makeSub('c', 's3', 'https://foo.example.com/3'),
+            makeSub('d', 'other', 'https://other.example.net/1'),
+        ];
+        const wrapper = mountPanel(subs);
+        const toggle = wrapper.find('[aria-expanded="false"]');
+        await toggle.trigger('click');
+        expect(wrapper.find('[aria-expanded="true"]').exists()).toBe(true);
+
+        // 模拟搜索结果：跨子域仍合为一组；随后模拟分页数据更新，保留用户的展开态。
+        await wrapper.setProps({ subscriptions: subs.slice(0, 3), paginatedSubscriptions: subs.slice(0, 2) });
+        expect(wrapper.findAll('.stub-card')).toHaveLength(2);
+        expect(wrapper.find('[aria-expanded="true"]').exists()).toBe(true);
+        await wrapper.setProps({ paginatedSubscriptions: subs.slice(1, 3) });
+        expect(wrapper.findAll('.stub-card')).toHaveLength(2);
+        expect(wrapper.find('[aria-expanded="true"]').exists()).toBe(true);
     });
 
     it('单条目站点不折叠，直接平铺', async () => {
         const subs = [
             makeSub('a', 'a', 'https://only-one.example.com/sub'),
-            makeSub('b', 'b', 'https://another.example.com/sub'),
+            makeSub('b', 'b', 'https://another.example.net/sub'),
         ];
         const wrapper = mountPanel(subs);
         await wrapper.vm.$nextTick();
@@ -69,6 +107,17 @@ describe('订阅源按站点折叠', () => {
         // 没有多条目分组时，不应出现折叠控件（展开全部按钮）
         expect(wrapper.html()).not.toMatch(/展开全部|Expand all/);
         // 卡片照样两张平铺
+        expect(wrapper.findAll('.stub-card')).toHaveLength(2);
+    });
+
+    it('同一机场根域的多个子域合并成组', async () => {
+        const subs = [
+            makeSub('a', 'api', 'https://api.foo.example.com/1'),
+            makeSub('b', 'sub', 'https://sub.foo.example.com/2'),
+        ];
+        const wrapper = mountPanel(subs);
+        await wrapper.vm.$nextTick();
+        expect(wrapper.find('[aria-expanded="false"]').exists()).toBe(true);
         expect(wrapper.findAll('.stub-card')).toHaveLength(2);
     });
 

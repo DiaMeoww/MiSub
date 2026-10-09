@@ -297,6 +297,42 @@ MATCH,节点选择
         expect(model.groups.some((group) => group.name === '🚀 节点选择')).toBe(true);
     });
 
+    it('omits Clash-only VMess udp_relay_mode from sing-box template output', () => {
+        const vmessConfig = btoa(JSON.stringify({
+            v: '2',
+            ps: 'VMessNode',
+            add: 'vmess.example.com',
+            port: '443',
+            id: 'safe-uuid',
+            aid: '0',
+            net: 'tcp',
+            type: 'none',
+            tls: '',
+        }));
+        const rendered = renderSingboxFromIniTemplate(
+            '[Proxy Group]\\nNode = select, VMessNode\\n[Rule]\\nMATCH,Node',
+            {
+                nodeList: `vmess://${vmessConfig}`,
+                targetFormat: 'singbox',
+            }
+        );
+        const parsed = JSON.parse(rendered);
+        const vmess = parsed.outbounds.find((outbound) => outbound.tag === 'VMessNode');
+        expect(vmess?.udp_relay_mode).toBeUndefined();
+    });
+
+    it('omits Clash-only TUIC udp_relay_mode from sing-box template output', () => {
+        const rendered = renderSingboxFromIniTemplate(
+            '[Proxy Group]\\nNode = select, TUICNode\\n[Rule]\\nMATCH,Node',
+            {
+                proxies: [{ name: 'TUICNode', type: 'tuic', server: 'tuic.example.com', port: 443, uuid: 'safe-uuid', password: 'safe-pass', 'udp-relay-mode': 'native' }],
+                targetFormat: 'singbox',
+            }
+        );
+        const parsed = JSON.parse(rendered);
+        const tuic = parsed.outbounds.find((outbound) => outbound.tag === 'TUICNode');
+        expect(tuic?.udp_relay_mode).toBeUndefined();
+    });
     it('should render sing-box json from ACL4SSR custom template', () => {
         const builtinTemplate = getBuiltinTemplate('clash_acl4ssr_full');
         const rendered = renderSingboxFromIniTemplate(builtinTemplate.content, {
