@@ -77,28 +77,120 @@ describe('订阅源按站点折叠', () => {
         expect(wrapper.find('[aria-expanded="true"]').exists()).toBe(true);
     });
 
-    it('用户展开后搜索过滤与分页切换仍按当前页合组且不重置展开状态', async () => {
+    it('搜索结果跨页时仍显示完整同站点分组，单条目只显示在当前页', async () => {
         const subs = [
             makeSub('a', 's1', 'https://api.foo.example.com/1'),
             makeSub('b', 's2', 'https://sub.foo.example.com/2'),
             makeSub('c', 's3', 'https://foo.example.com/3'),
             makeSub('d', 'other', 'https://other.example.net/1'),
         ];
-        const wrapper = mountPanel(subs);
-        const toggle = wrapper.find('[aria-expanded="false"]');
-        await toggle.trigger('click');
-        expect(wrapper.find('[aria-expanded="true"]').exists()).toBe(true);
-
-        // 模拟搜索结果：跨子域仍合为一组；随后模拟分页数据更新，保留用户的展开态。
+        const wrapper = mountPanel(subs.slice(0, 2));
         await wrapper.setProps({
-            subscriptions: subs.slice(0, 3),
+            subscriptions: subs,
             paginatedSubscriptions: subs.slice(0, 2),
         });
-        expect(wrapper.findAll('.stub-card')).toHaveLength(2);
+        // 当前页只命中组内两项，但完整同站点组的三项均出现，组头总数正确。
+        expect(wrapper.findAll('.stub-card')).toHaveLength(3);
+        expect(wrapper.find('[aria-expanded="false"]').text()).toContain('3');
+
+        // 下一页命中该组的第三项时仍显示完整组，并显示当前页的单条目。
+        await wrapper.setProps({ paginatedSubscriptions: subs.slice(2, 4) });
+        expect(wrapper.findAll('.stub-card')).toHaveLength(4);
+        expect(wrapper.find('[aria-expanded="false"]').text()).toContain('3');
+    });
+
+    it('wd-blue sources group by airport root across subdomains and URLs', async () => {
+        const subs = [
+            makeSub('a', 'first', 'https://sub1.wd-blue.com/sub/one'),
+            makeSub('b', 'second', 'https://api.wd-blue.com/sub/two'),
+            makeSub('c', 'third', 'https://www.wd-blue.com/third'),
+        ];
+        const wrapper = mountPanel(subs);
+        await wrapper.vm.$nextTick();
+
+        expect(wrapper.findAll('[aria-expanded="false"]')).toHaveLength(1);
+        expect(wrapper.html()).toContain('>3<');
+        expect(wrapper.findAll('.stub-card')).toHaveLength(3);
+    });
+
+    it('托管域名按项目 tenant 分组，不把无关 pages.dev 站点合并', async () => {
+        const subs = [
+            makeSub('a', 'one', 'https://project-a.pages.dev/sub/one'),
+            makeSub('b', 'two', 'https://project-a.pages.dev/sub/two'),
+            makeSub('c', 'other', 'https://project-b.pages.dev/sub'),
+        ];
+        const wrapper = mountPanel(subs);
+        await wrapper.vm.$nextTick();
+
+        expect(wrapper.findAll('[aria-expanded="false"]')).toHaveLength(1);
+        expect(wrapper.findAll('.stub-card')).toHaveLength(3);
+        expect(wrapper.html()).toContain('Project a');
+        expect(
+            wrapper.find('[aria-expanded="false"]').element.closest('.rounded-xl').textContent
+        ).toContain('2');
+    });
+
+    it('组标题可以展开/收起，且显示数量及组重命名控件', async () => {
+        const subs = [
+            { ...makeSub('a', 'one', 'https://api.wd-blue.com/sub/one'), detectedName: '西数' },
+            makeSub('b', 'two', 'https://sub.wd-blue.com/sub/two'),
+        ];
+        const wrapper = mountPanel(subs);
+        const header = wrapper.find('[aria-expanded="false"]');
+        expect(wrapper.html()).toContain('>2<');
+        expect(wrapper.text()).toMatch(/Rename all|Confirm airport identity/);
+        await header.trigger('click');
         expect(wrapper.find('[aria-expanded="true"]').exists()).toBe(true);
-        await wrapper.setProps({ paginatedSubscriptions: subs.slice(1, 3) });
-        expect(wrapper.findAll('.stub-card')).toHaveLength(2);
-        expect(wrapper.find('[aria-expanded="true"]').exists()).toBe(true);
+        await wrapper.find('[aria-expanded="true"]').trigger('click');
+        expect(wrapper.find('[aria-expanded="false"]').exists()).toBe(true);
+    });
+
+    it('显式机场归属可将不同域名合并，且可恢复自动分组', async () => {
+        const subs = [
+            {
+                ...makeSub('a', 'one', 'https://one.example.net/sub'),
+                airportIdentity: { groupId: 'airport-1', name: '机场甲' },
+            },
+            {
+                ...makeSub('b', 'two', 'https://two.example.org/sub'),
+                airportIdentity: { groupId: 'airport-1', name: '机场甲' },
+            },
+            makeSub('c', 'three', 'https://three.example.com/sub'),
+        ];
+        const wrapper = mountPanel(subs, { onSplitAirportGroup: vi.fn() });
+        expect(wrapper.findAll('[aria-expanded="false"]')).toHaveLength(1);
+        expect(wrapper.find('[aria-expanded="false"]').text()).toContain('2');
+        expect(wrapper.text()).toContain('机场甲');
+        const split = wrapper.findAll('button').find((button) => /拆分机场分组|Split airport group/.test(button.text()));
+        expect(split).toBeTruthy();
+        await split.trigger('click');
+        expect(wrapper.emitted('split-airport-group')).toHaveLength(2);
+        expect(wrapper.emitted('split-airport-group').map(([ids, identity]) => [ids, identity.groupId])).toEqual([
+            [['a'], expect.any(String)],
+            [['b'], expect.any(String)],
+        ]);
+        expect(wrapper.emitted('split-airport-group')[0][1].groupId).not.toBe(
+            wrapper.emitted('split-airport-group')[1][1].groupId
+        );
+        const reset = wrapper
+            .findAll('button')
+            .find(
+                (button) =>
+                    button.text().includes('恢复自动机场分组') ||
+                    button.text().includes('Return to automatic airport grouping')
+            );
+        expect(reset).toBeTruthy();
+        await reset.trigger('click');
+        expect(wrapper.emitted('reset-group')?.[0]).toEqual([['a', 'b']]);
+    });
+
+    it('assigns only the selected group ids from the group header editor', async () => {
+        const wrapper = mountPanel([
+            { ...makeSub('a', 'one', 'https://one.example.net/sub'), airportIdentity: { groupId: 'existing', name: 'Existing' } },
+            makeSub('b', 'two', 'https://two.example.org/sub'),
+            makeSub('c', 'three', 'https://three.example.com/sub'),
+        ]);
+        expect(wrapper.findAll('button').filter((button) => /指定机场分组|Assign to airport group/.test(button.text())).length).toBeGreaterThan(0);
     });
 
     it('单条目站点不折叠，直接平铺', async () => {
