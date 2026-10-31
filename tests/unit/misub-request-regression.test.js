@@ -359,6 +359,62 @@ describe('handleMisubRequest regression coverage', () => {
         }
     });
 
+    it('attaches Subscription-Userinfo and Content-Disposition to base64 responses', async () => {
+        const subscriptions = [
+            {
+                id: 'sub-a',
+                name: 'Airport A',
+                url: 'https://airport.example/sub',
+                enabled: true,
+                userInfo: null,
+            },
+        ];
+        const adapter = createStorageAdapter({
+            settings: {
+                mytoken: 'stable-token',
+                FileName: 'MyCustomSub',
+                UpdateInterval: 12,
+            },
+            subscriptions,
+        });
+        createAdapter.mockReturnValue(adapter);
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(
+                async () =>
+                    new Response('trojan://pass@example.com:443#HK', {
+                        status: 200,
+                        headers: {
+                            'subscription-userinfo':
+                                'upload=50; download=100; total=2000; expire=3000',
+                        },
+                    })
+            )
+        );
+
+        const logSpy = silenceExpectedRequestLogs();
+        try {
+            const { handleMisubRequest } =
+                await import('../../functions/modules/subscription/main-handler.js');
+            const response = await handleMisubRequest({
+                request: new Request('https://misub.example/stable-token?base64&refresh=1', {
+                    headers: { 'User-Agent': 'Shadowrocket/1999' },
+                }),
+                env: {},
+                waitUntil: vi.fn(),
+            });
+
+            expect(response.status).toBe(200);
+            expect(response.headers.get('Subscription-Userinfo')).toBe(
+                'upload=50; download=100; total=2000; expire=3000'
+            );
+            expect(response.headers.get('Profile-Update-Interval')).toBe('12');
+            expect(response.headers.get('Content-Disposition')).toContain('MyCustomSub');
+        } finally {
+            logSpy.mockRestore();
+        }
+    });
+
     it('uses the subscription group expiration time in the output traffic header', async () => {
         const subscriptions = [
             {

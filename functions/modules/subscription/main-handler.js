@@ -196,6 +196,21 @@ function buildUserInfoHeaderFromSubscriptions(context, subscriptions, profileExp
         : null;
 }
 
+/**
+ * [RFC 6266 / RFC 5987] 标准化 Content-Disposition
+ * filename: 兼容 ASCII fallback, filename*: UTF-8 编码
+ */
+function buildContentDisposition(subName) {
+    if (!subName) return null;
+    const asciiSubName = subName.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '\\"');
+    const encodedSubName = encodeURIComponent(subName)
+        .replace(/'/g, '%27')
+        .replace(/\(/g, '%28')
+        .replace(/\)/g, '%29')
+        .replace(/\*/g, '%2A');
+    return `attachment; filename="${asciiSubName}"; filename*=utf-8''${encodedSubName}`;
+}
+
 function resolveNotificationExpireDate(profileExpiresAt, mergedExpireTimestamp = 0) {
     let date = profileExpiresAt ? new Date(profileExpiresAt) : null;
     if (!date || Number.isNaN(date.getTime())) {
@@ -1243,6 +1258,19 @@ export async function handleMisubRequest(context) {
             'Content-Type': 'text/plain; charset=utf-8',
             'Cache-Control': 'no-store, no-cache',
         };
+        const userInfoHeader = buildUserInfoHeaderFromSubscriptions(
+            context,
+            targetMisubs,
+            currentProfile?.expiresAt
+        );
+        if (userInfoHeader) {
+            headers['Subscription-Userinfo'] = userInfoHeader;
+            headers['Profile-Update-Interval'] = String(config.UpdateInterval || 24);
+        }
+        const contentDisposition = buildContentDisposition(subName);
+        if (contentDisposition) {
+            headers['Content-Disposition'] = contentDisposition;
+        }
         Object.entries(cacheHeaders).forEach(([key, value]) => {
             headers[key] = value;
         });
@@ -1359,16 +1387,10 @@ export async function handleMisubRequest(context) {
             const isJson = targetFormat === 'singbox' || targetFormat === 'sing-box';
 
             // [RFC 6266 / RFC 5987] Standardized Content-Disposition
-            // filename: ASCII-only fallback, filename*: UTF-8 encoded
-            const asciiSubName = subName.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '\\"');
-            const encodedSubName = encodeURIComponent(subName)
-                .replace(/'/g, '%27')
-                .replace(/\(/g, '%28')
-                .replace(/\)/g, '%29')
-                .replace(/\*/g, '%2A');
+            const contentDisposition = buildContentDisposition(subName);
 
             const responseHeaders = new Headers({
-                'Content-Disposition': `attachment; filename="${asciiSubName}"; filename*=utf-8''${encodedSubName}`,
+                ...(contentDisposition ? { 'Content-Disposition': contentDisposition } : {}),
                 'Content-Type': contentType || 'text/plain; charset=utf-8',
                 'Cache-Control': 'no-store, no-cache',
                 'X-MiSub-Mode': `builtin-${targetFormat}`,
@@ -1430,6 +1452,10 @@ export async function handleMisubRequest(context) {
     if (userInfoHeader) {
         base64Headers['Subscription-Userinfo'] = userInfoHeader;
         base64Headers['Profile-Update-Interval'] = String(config.UpdateInterval || 24);
+    }
+    const fallbackContentDisposition = buildContentDisposition(subName);
+    if (fallbackContentDisposition) {
+        base64Headers['Content-Disposition'] = fallbackContentDisposition;
     }
     Object.entries(cacheHeaders).forEach(([key, value]) => {
         base64Headers[key] = value;
