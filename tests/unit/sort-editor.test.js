@@ -3,9 +3,19 @@ import { mount } from '@vue/test-utils';
 import SortEditor from '../../src/components/features/Operators/components/SortEditor.vue';
 import { createI18n } from '../../src/i18n/index.js';
 
-const mountSortEditor = (modelValue = { keys: [] }, locale = 'zh-CN') =>
-    mount(SortEditor, {
-        props: { modelValue },
+const mountSortEditor = (
+    modelValue = { keys: [] },
+    locale = 'zh-CN',
+    { controlled = false } = {}
+) => {
+    const props = { modelValue };
+    const wrapper = mount(SortEditor, {
+        props: controlled
+            ? {
+                  ...props,
+                  'onUpdate:modelValue': (val) => wrapper.setProps({ modelValue: val }),
+              }
+            : props,
         global: {
             plugins: [createI18n({ initialLocale: locale })],
             stubs: {
@@ -17,6 +27,11 @@ const mountSortEditor = (modelValue = { keys: [] }, locale = 'zh-CN') =>
             },
         },
     });
+    return wrapper;
+};
+
+const mountControlledSortEditor = (modelValue = { keys: [] }, locale = 'zh-CN') =>
+    mountSortEditor(modelValue, locale, { controlled: true });
 
 describe('SortEditor', () => {
     it('renders sort key options in the expected order', () => {
@@ -114,27 +129,11 @@ describe('SortEditor', () => {
     });
 
     it('keeps unsubmitted regex drafts aligned when reordering sort conditions', async () => {
-        const model = {
+        const wrapper = mountControlledSortEditor({
             keys: [
                 { key: 'region', order: 'asc', customOrder: ['香港'] },
                 { key: 'regex', order: 'asc', customOrder: [] },
             ],
-        };
-        const wrapper = mount(SortEditor, {
-            props: {
-                modelValue: model,
-                'onUpdate:modelValue': (val) => wrapper.setProps({ modelValue: val }),
-            },
-            global: {
-                plugins: [createI18n({ initialLocale: 'zh-CN' })],
-                stubs: {
-                    draggable: {
-                        props: ['modelValue'],
-                        template:
-                            '<div><div v-for="(element, index) in modelValue" :key="element.id"><slot name="item" :element="element" :index="index" /></div></div>',
-                    },
-                },
-            },
         });
 
         const inputBefore = wrapper.find('input[type="text"]');
@@ -145,5 +144,77 @@ describe('SortEditor', () => {
 
         const inputAfter = wrapper.find('input[type="text"]');
         expect(inputAfter.element.value).toBe('dmit');
+    });
+
+    it('hides sort direction select for regex pin conditions and normalizes order on switch', async () => {
+        const wrapper = mountControlledSortEditor({
+            keys: [
+                { key: 'region', order: 'asc', customOrder: ['香港'] },
+                { key: 'name', order: 'desc', customOrder: [] },
+            ],
+        });
+
+        // 未切换前两行各自都有 key + order 两个 select，共 4 个
+        expect(wrapper.findAll('select')).toHaveLength(4);
+
+        const secondKeySelect = wrapper.findAll('select')[2];
+        await secondKeySelect.setValue('regex');
+
+        // 第二行切为 regex 后隐藏升降序选择框，只剩 3 个 select
+        expect(wrapper.findAll('select')).toHaveLength(3);
+        const emitted = wrapper.emitted('update:modelValue');
+        expect(emitted.at(-1)[0].keys[1]).toEqual({
+            key: 'regex',
+            order: 'asc',
+            customOrder: [],
+        });
+    });
+
+    it('stashes and restores customOrder across key switches, reordering, and deletion', async () => {
+        const wrapper = mountControlledSortEditor({
+            keys: [
+                { key: 'region', order: 'asc', customOrder: ['日本', '香港'] },
+                { key: 'regex', order: 'asc', customOrder: ['亚马逊', 'dmit'] },
+            ],
+        });
+
+        // 行 1 从 regex 切走并切经过 protocol -> name，再切回 regex 应恢复原规则
+        let row1KeySelect = wrapper.findAll('select')[2];
+        await row1KeySelect.setValue('protocol');
+        expect(wrapper.props('modelValue').keys[1].customOrder).toEqual([
+            'vless',
+            'trojan',
+            'vmess',
+            'hysteria2',
+            'ss',
+            'ssr',
+            'anytls',
+        ]);
+
+        row1KeySelect = wrapper.findAll('select')[2];
+        await row1KeySelect.setValue('name');
+        expect(wrapper.props('modelValue').keys[1].customOrder).toEqual([]);
+
+        // 上移到第 0 行后再切回 regex，仍应恢复暂存的正则规则
+        const moveUpButtons = wrapper.findAll('button[aria-label="上移"]');
+        await moveUpButtons[1].trigger('click');
+
+        let row0KeySelect = wrapper.findAll('select')[0];
+        await row0KeySelect.setValue('regex');
+        expect(wrapper.props('modelValue').keys[0].customOrder).toEqual(['亚马逊', 'dmit']);
+
+        // 第 0 行切走，第 1 行(region 自定义顺序)切为 regex，再删除第 0 行，验证下标移位后仍能恢复
+        row0KeySelect = wrapper.findAll('select')[0];
+        await row0KeySelect.setValue('name');
+
+        const row1RegionSelect = wrapper.findAll('select')[2];
+        await row1RegionSelect.setValue('regex');
+
+        const removeButtons = wrapper.findAll('button[aria-label="删除排序字段"]');
+        await removeButtons[0].trigger('click');
+
+        const remainingKeySelect = wrapper.findAll('select')[0];
+        await remainingKeySelect.setValue('region');
+        expect(wrapper.props('modelValue').keys[0].customOrder).toEqual(['日本', '香港']);
     });
 });

@@ -15,6 +15,9 @@
     const { t } = useI18n();
     const regexDrafts = ref({});
     const regexErrors = ref({});
+    // 按行下标与条件类型暂存已编辑的 customOrder，防止切换条件类型后配置丢失
+    const stashedCustomOrders = ref({});
+    const CUSTOM_ORDER_KEYS = new Set(['region', 'protocol', 'regex']);
 
     const swapIndexedMap = (mapObj, idxA, idxB) => {
         const next = { ...mapObj };
@@ -92,6 +95,7 @@
         });
         regexDrafts.value = removeIndexedEntry(regexDrafts.value, index);
         regexErrors.value = removeIndexedEntry(regexErrors.value, index);
+        stashedCustomOrders.value = removeIndexedEntry(stashedCustomOrders.value, index);
     };
 
     const moveKey = (index, dir) => {
@@ -104,23 +108,52 @@
         });
         regexDrafts.value = swapIndexedMap(regexDrafts.value, index, target);
         regexErrors.value = swapIndexedMap(regexErrors.value, index, target);
+        stashedCustomOrders.value = swapIndexedMap(stashedCustomOrders.value, index, target);
     };
 
     const updateKeyField = (index, field, value) => {
+        let nextDrafts = regexDrafts.value;
+        let nextErrors = regexErrors.value;
+        let nextStashed = stashedCustomOrders.value;
+
         updateKeys((keys) => {
             const current = keys[index];
             if (!current) return keys;
             let next = { ...current, [field]: value };
-            if (field === 'key') {
-                next.customOrder = getDefaultCustomOrder(value);
+            if (field === 'key' && current.key !== value) {
+                const rowStash = { ...(nextStashed[index] || {}) };
+                if (CUSTOM_ORDER_KEYS.has(current.key) && Array.isArray(current.customOrder)) {
+                    rowStash[current.key] = [...current.customOrder];
+                }
+
+                const restoredOrder = rowStash[value];
+                if (Array.isArray(restoredOrder)) {
+                    next.customOrder = [...restoredOrder];
+                    delete rowStash[value];
+                } else {
+                    next.customOrder = getDefaultCustomOrder(value);
+                }
+
+                if (Object.keys(rowStash).length > 0) {
+                    nextStashed = { ...nextStashed, [index]: rowStash };
+                } else {
+                    nextStashed = omitIndexedEntry(nextStashed, index);
+                }
+
+                if (value === 'regex') {
+                    next.order = 'asc';
+                }
+
+                nextDrafts = omitIndexedEntry(nextDrafts, index);
+                nextErrors = omitIndexedEntry(nextErrors, index);
             }
             keys[index] = next;
             return keys;
         });
-        if (field === 'key') {
-            regexDrafts.value = omitIndexedEntry(regexDrafts.value, index);
-            regexErrors.value = omitIndexedEntry(regexErrors.value, index);
-        }
+
+        regexDrafts.value = nextDrafts;
+        regexErrors.value = nextErrors;
+        stashedCustomOrders.value = nextStashed;
     };
 
     const getRegionEmoji = (region) => {
@@ -316,6 +349,7 @@
                     </select>
 
                     <select
+                        v-if="item.key !== 'regex'"
                         :value="item.order"
                         @change="updateKeyField(idx, 'order', $event.target.value)"
                         class="w-14 bg-transparent border-none p-0 text-[11px] text-gray-600 dark:text-gray-300 focus-visible:ring-0 outline-none"
@@ -353,9 +387,7 @@
 
                 <!-- Custom Order Editor Section -->
                 <div
-                    v-if="
-                        item.key === 'region' || item.key === 'protocol' || item.key === 'regex'
-                    "
+                    v-if="item.key === 'region' || item.key === 'protocol' || item.key === 'regex'"
                     class="mt-0.5 p-2 bg-white dark:bg-gray-950 rounded-lg border border-gray-100 dark:border-gray-900 space-y-2"
                 >
                     <div class="flex items-center justify-between text-[10px]">

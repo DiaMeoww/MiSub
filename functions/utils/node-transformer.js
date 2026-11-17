@@ -710,14 +710,27 @@ export function makeComparator(sortCfg) {
         return compiled;
     });
 
-    const getRegexMatchIndex = (name, regexList) => {
+    // 按排序键下标和节点名缓存正则匹配结果，将正则匹配开销从 O(n log n · R) 降为 O(n · R)
+    const regexMatchCaches = customRegexLists.map((list) =>
+        list && list.length > 0 ? new Map() : null
+    );
+
+    const getRegexMatchIndex = (name, keyIdx, regexList) => {
         const str = String(name || '');
+        const cache = regexMatchCaches[keyIdx];
+        if (cache) {
+            const cached = cache.get(str);
+            if (cached !== undefined) return cached;
+        }
+        let matchedIdx = Number.MAX_SAFE_INTEGER;
         for (let i = 0; i < regexList.length; i++) {
             if (regexList[i].re.test(str)) {
-                return regexList[i].index;
+                matchedIdx = regexList[i].index;
+                break;
             }
         }
-        return Number.MAX_SAFE_INTEGER;
+        if (cache) cache.set(str, matchedIdx);
+        return matchedIdx;
     };
 
     const cmpStr = (a, b) =>
@@ -770,9 +783,10 @@ export function makeComparator(sortCfg) {
             if (key === 'regex') {
                 const regexList = customRegexLists[i];
                 if (!regexList || regexList.length === 0) continue;
-                const raIdx = getRegexMatchIndex(ra.name, regexList);
-                const rbIdx = getRegexMatchIndex(rb.name, regexList);
-                if (raIdx !== rbIdx) return (raIdx - rbIdx) * order;
+                const raIdx = getRegexMatchIndex(ra.name, i, regexList);
+                const rbIdx = getRegexMatchIndex(rb.name, i, regexList);
+                // 正则置顶始终按规则优先级由高到低置顶，不受 order 影响
+                if (raIdx !== rbIdx) return raIdx - rbIdx;
                 continue;
             }
             if (key === 'name') {
