@@ -31,8 +31,29 @@
         };
     };
 
+    const DEFAULT_CUSTOM_ORDERS = {
+        region: [
+            '香港',
+            '台湾',
+            '日本',
+            '新加坡',
+            '美国',
+            '韩国',
+            '英国',
+            '德国',
+            '法国',
+            '加拿大',
+        ],
+        protocol: ['vless', 'trojan', 'vmess', 'hysteria2', 'ss', 'ssr', 'anytls'],
+    };
+
+    const getDefaultCustomOrder = (keyType) => [...(DEFAULT_CUSTOM_ORDERS[keyType] || [])];
+
     const addKey = () => {
-        updateKeys((keys) => [...keys, { key: 'name', order: 'asc', customOrder: [] }]);
+        updateKeys((keys) => [
+            ...keys,
+            { key: 'region', order: 'asc', customOrder: getDefaultCustomOrder('region') },
+        ]);
     };
 
     const removeKey = (index) => {
@@ -57,32 +78,7 @@
             if (!current) return keys;
             let next = { ...current, [field]: value };
             if (field === 'key') {
-                if (value === 'region') {
-                    next.customOrder = [
-                        '香港',
-                        '台湾',
-                        '日本',
-                        '新加坡',
-                        '美国',
-                        '韩国',
-                        '英国',
-                        '德国',
-                        '法国',
-                        '加拿大',
-                    ];
-                } else if (value === 'protocol') {
-                    next.customOrder = [
-                        'vless',
-                        'trojan',
-                        'vmess',
-                        'hysteria2',
-                        'ss',
-                        'ssr',
-                        'anytls',
-                    ];
-                } else {
-                    next.customOrder = [];
-                }
+                next.customOrder = getDefaultCustomOrder(value);
             }
             keys[index] = next;
             return keys;
@@ -114,22 +110,7 @@
         updateKeys((keys) => {
             const current = keys[idx];
             if (!current) return keys;
-            const defaults =
-                keyType === 'region'
-                    ? [
-                          '香港',
-                          '台湾',
-                          '日本',
-                          '新加坡',
-                          '美国',
-                          '韩国',
-                          '英国',
-                          '德国',
-                          '法国',
-                          '加拿大',
-                      ]
-                    : ['vless', 'trojan', 'vmess', 'hysteria2', 'ss', 'ssr', 'anytls'];
-            keys[idx] = { ...current, customOrder: defaults };
+            keys[idx] = { ...current, customOrder: getDefaultCustomOrder(keyType) };
             return keys;
         });
     };
@@ -179,11 +160,11 @@
     };
 
     const availableKeys = [
-        { value: 'regex', labelKey: 'operators.sortKeyRegex' },
-        { value: 'name', labelKey: 'operators.sortKeyName' },
-        { value: 'group', labelKey: 'operators.sortKeyGroup' },
         { value: 'region', labelKey: 'operators.sortKeyRegion' },
         { value: 'protocol', labelKey: 'operators.sortKeyProtocol' },
+        { value: 'name', labelKey: 'operators.sortKeyName' },
+        { value: 'regex', labelKey: 'operators.sortKeyRegex' },
+        { value: 'group', labelKey: 'operators.sortKeyGroup' },
         { value: 'server', labelKey: 'operators.sortKeyServer' },
         { value: 'port', labelKey: 'operators.sortKeyPort' },
     ];
