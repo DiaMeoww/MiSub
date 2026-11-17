@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { applyNodeTransformPipeline } from '../../functions/utils/node-transformer.js';
+import {
+    applyNodeTransformPipeline,
+    makeComparator,
+} from '../../functions/utils/node-transformer.js';
 
 describe('applyNodeTransformPipeline filters', () => {
     const nodes = [
@@ -141,5 +144,33 @@ describe('applyNodeTransformPipeline filters', () => {
         expect(result.some((line) => line.includes('%E6%B5%81%E9%87%8F%E5%89%A9%E4%BD%99'))).toBe(
             true
         );
+    });
+
+    it('sorts nodes by regex priority rules first and falls back to subsequent sort keys', () => {
+        const records = [
+            { name: 'HK 阿里云 01', protocol: 'trojan' },
+            { name: 'US DMIT Pro 02', protocol: 'vmess' },
+            { name: 'JP 亚马逊 AWS 02', protocol: 'trojan' },
+            { name: 'SG 普通节点 01', protocol: 'vless' },
+            { name: 'US dmit Lite 01', protocol: 'vless' },
+            { name: 'HK 亚马逊 AWS 01', protocol: 'vless' },
+        ];
+
+        const comparator = makeComparator({
+            keys: [
+                { key: 'regex', order: 'asc', customOrder: ['亚马逊', 'dmit'] },
+                { key: 'protocol', order: 'asc', customOrder: ['vless', 'trojan', 'vmess'] },
+            ],
+        });
+
+        const sortedNames = [...records].sort(comparator).map((r) => r.name);
+        expect(sortedNames).toEqual([
+            'HK 亚马逊 AWS 01',
+            'JP 亚马逊 AWS 02',
+            'US dmit Lite 01',
+            'US DMIT Pro 02',
+            'SG 普通节点 01',
+            'HK 阿里云 01',
+        ]);
     });
 });

@@ -1,5 +1,5 @@
 <script setup>
-    import { computed } from 'vue';
+    import { computed, ref } from 'vue';
     import { useI18n } from '../../../../i18n/index.js';
     import draggable from 'vuedraggable';
     import { REGION_EMOJI } from '../../../../../functions/modules/utils/geo-utils.js';
@@ -13,6 +13,7 @@
 
     const emit = defineEmits(['update:modelValue']);
     const { t } = useI18n();
+    const regexDrafts = ref({});
 
     const params = computed({
         get: () => ({
@@ -133,7 +134,52 @@
         });
     };
 
+    const addCustomOrderItem = (idx) => {
+        const raw = String(regexDrafts.value[idx] || '').trim();
+        if (!raw) return;
+        updateKeys((keys) => {
+            const current = keys[idx];
+            if (!current) return keys;
+            const existing = Array.isArray(current.customOrder) ? current.customOrder : [];
+            if (!existing.includes(raw)) {
+                keys[idx] = {
+                    ...current,
+                    customOrder: [...existing, raw],
+                };
+            }
+            return keys;
+        });
+        regexDrafts.value = { ...regexDrafts.value, [idx]: '' };
+    };
+
+    const removeCustomOrderItem = (idx, tagIdx) => {
+        updateKeys((keys) => {
+            const current = keys[idx];
+            if (!current) return keys;
+            const nextOrder = [...(current.customOrder || [])];
+            nextOrder.splice(tagIdx, 1);
+            keys[idx] = { ...current, customOrder: nextOrder };
+            return keys;
+        });
+    };
+
+    const clearCustomOrder = (idx) => {
+        updateKeys((keys) => {
+            const current = keys[idx];
+            if (!current) return keys;
+            keys[idx] = { ...current, customOrder: [] };
+            return keys;
+        });
+    };
+
+    const getPriorityTypeLabelKey = (key) => {
+        if (key === 'region') return 'operators.sortKeyRegion';
+        if (key === 'protocol') return 'operators.sortKeyProtocol';
+        return 'operators.sortKeyRegex';
+    };
+
     const availableKeys = [
+        { value: 'regex', labelKey: 'operators.sortKeyRegex' },
         { value: 'name', labelKey: 'operators.sortKeyName' },
         { value: 'group', labelKey: 'operators.sortKeyGroup' },
         { value: 'region', labelKey: 'operators.sortKeyRegion' },
@@ -267,7 +313,9 @@
 
                 <!-- Custom Order Editor Section -->
                 <div
-                    v-if="item.key === 'region' || item.key === 'protocol'"
+                    v-if="
+                        item.key === 'region' || item.key === 'protocol' || item.key === 'regex'
+                    "
                     class="mt-0.5 p-2 bg-white dark:bg-gray-950 rounded-lg border border-gray-100 dark:border-gray-900 space-y-2"
                 >
                     <div class="flex items-center justify-between text-[10px]">
@@ -276,19 +324,43 @@
                         >
                             {{
                                 t('operators.customPriorityOrder', {
-                                    type: t(
-                                        item.key === 'region'
-                                            ? 'operators.sortKeyRegion'
-                                            : 'operators.sortKeyProtocol'
-                                    ),
+                                    type: t(getPriorityTypeLabelKey(item.key)),
                                 })
                             }}
                         </span>
                         <button
+                            v-if="item.key === 'region' || item.key === 'protocol'"
+                            type="button"
                             @click="resetToDefaultOrder(idx, item.key)"
                             class="text-indigo-500 hover:text-indigo-600 font-bold"
                         >
                             {{ t('operators.resetDefault') }}
+                        </button>
+                        <button
+                            v-else-if="(item.customOrder || []).length > 0"
+                            type="button"
+                            @click="clearCustomOrder(idx)"
+                            class="text-rose-500 hover:text-rose-600 font-bold"
+                        >
+                            {{ t('operators.clearAll') }}
+                        </button>
+                    </div>
+
+                    <!-- Regex Input Row -->
+                    <div v-if="item.key === 'regex'" class="flex items-center gap-1.5">
+                        <input
+                            v-model="regexDrafts[idx]"
+                            type="text"
+                            @keydown.enter.prevent="addCustomOrderItem(idx)"
+                            :placeholder="t('operators.regexPinPlaceholder')"
+                            class="flex-1 px-2.5 py-1 text-[11px] rounded-md bg-gray-50 dark:bg-gray-900 border border-gray-200/70 dark:border-gray-800 text-gray-900 dark:text-gray-100 focus:bg-white dark:focus:bg-gray-800 focus:border-indigo-500/40 transition-all outline-none"
+                        />
+                        <button
+                            type="button"
+                            @click="addCustomOrderItem(idx)"
+                            class="px-2.5 py-1 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold transition-colors shrink-0"
+                        >
+                            + {{ t('operators.add') }}
                         </button>
                     </div>
 
@@ -300,11 +372,23 @@
                         animation="200"
                         class="flex flex-wrap gap-1.5"
                     >
-                        <template #item="{ element }">
+                        <template #item="{ element, index }">
                             <div
                                 class="cursor-grab active:cursor-grabbing inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50/60 dark:bg-indigo-500/10 border border-indigo-100/50 dark:border-indigo-500/20 text-[10px] text-indigo-600 dark:text-indigo-400 font-bold hover:bg-indigo-100/80 dark:hover:bg-indigo-500/20 transition-colors select-none"
                             >
+                                <span v-if="item.key === 'regex'" class="opacity-60 font-mono"
+                                    >{{ index + 1 }}.</span
+                                >
                                 <span>{{ displayTagName(item, element.name) }}</span>
+                                <button
+                                    v-if="item.key === 'regex'"
+                                    type="button"
+                                    @click.stop="removeCustomOrderItem(idx, index)"
+                                    class="ml-0.5 text-indigo-400 hover:text-rose-500 transition-colors leading-none"
+                                    :aria-label="t('operators.removeRule')"
+                                >
+                                    ×
+                                </button>
                             </div>
                         </template>
                     </draggable>
@@ -313,7 +397,13 @@
                         v-if="!(item.customOrder || []).length"
                         class="text-[9px] text-gray-500 dark:text-gray-400 italic"
                     >
-                        {{ t('operators.emptyPriorityItems') }}
+                        {{
+                            t(
+                                item.key === 'regex'
+                                    ? 'operators.emptyRegexPriorityItems'
+                                    : 'operators.emptyPriorityItems'
+                            )
+                        }}
                     </div>
                 </div>
             </div>

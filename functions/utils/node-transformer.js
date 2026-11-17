@@ -663,6 +663,7 @@ export function makeComparator(sortCfg) {
 
     // 预先构建 customOrder 索引 Map，将 O(n) 查找优化为 O(1)
     const customOrderMaps = keys.map((k) => {
+        if (k?.key === 'regex') return null;
         let orderList = k?.customOrder;
         if (!Array.isArray(orderList) || orderList.length === 0) {
             if (k?.key === 'region') {
@@ -687,6 +688,35 @@ export function makeComparator(sortCfg) {
         orderList.forEach((v, i) => map.set(String(v), i));
         return map;
     });
+
+    // 预先编译正则置顶规则列表，避免每次比较重复创建 RegExp
+    const customRegexLists = keys.map((k) => {
+        if (k?.key !== 'regex' || !Array.isArray(k?.customOrder)) return null;
+        const compiled = [];
+        k.customOrder.forEach((rule, idx) => {
+            if (!rule) return;
+            const pattern =
+                typeof rule === 'string' ? rule.trim() : String(rule.pattern || '').trim();
+            const flags = typeof rule === 'string' ? 'i' : rule.flags || 'i';
+            if (!pattern) return;
+            try {
+                compiled.push({ re: new RegExp(pattern, flags), index: idx });
+            } catch (error) {
+                warnInvalidRegex(typeof rule === 'string' ? { pattern } : rule, error);
+            }
+        });
+        return compiled;
+    });
+
+    const getRegexMatchIndex = (name, regexList) => {
+        const str = String(name || '');
+        for (let i = 0; i < regexList.length; i++) {
+            if (regexList[i].re.test(str)) {
+                return regexList[i].index;
+            }
+        }
+        return Number.MAX_SAFE_INTEGER;
+    };
 
     const cmpStr = (a, b) =>
         String(a || '').localeCompare(String(b || ''), undefined, {
@@ -735,6 +765,14 @@ export function makeComparator(sortCfg) {
             const orderMap = customOrderMaps[i];
 
             let va, vb;
+            if (key === 'regex') {
+                const regexList = customRegexLists[i];
+                if (!regexList || regexList.length === 0) continue;
+                const raIdx = getRegexMatchIndex(ra.name, regexList);
+                const rbIdx = getRegexMatchIndex(rb.name, regexList);
+                if (raIdx !== rbIdx) return (raIdx - rbIdx) * order;
+                continue;
+            }
             if (key === 'name') {
                 va = nameIgnoreEmoji ? stripLeadingEmoji(ra.name) : ra.name;
                 vb = nameIgnoreEmoji ? stripLeadingEmoji(rb.name) : rb.name;
