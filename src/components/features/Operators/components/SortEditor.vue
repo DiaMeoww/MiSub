@@ -14,6 +14,35 @@
     const emit = defineEmits(['update:modelValue']);
     const { t } = useI18n();
     const regexDrafts = ref({});
+    const regexErrors = ref({});
+
+    const swapIndexedMap = (mapObj, idxA, idxB) => {
+        const next = { ...mapObj };
+        const valA = next[idxA];
+        const valB = next[idxB];
+        if (valB === undefined) delete next[idxA];
+        else next[idxA] = valB;
+        if (valA === undefined) delete next[idxB];
+        else next[idxB] = valA;
+        return next;
+    };
+
+    const removeIndexedEntry = (mapObj, removedIdx) => {
+        const next = {};
+        for (const [k, v] of Object.entries(mapObj)) {
+            const num = Number(k);
+            if (num < removedIdx) next[num] = v;
+            else if (num > removedIdx) next[num - 1] = v;
+        }
+        return next;
+    };
+
+    const omitIndexedEntry = (mapObj, idx) => {
+        if (!(idx in mapObj)) return mapObj;
+        const next = { ...mapObj };
+        delete next[idx];
+        return next;
+    };
 
     const params = computed({
         get: () => ({
@@ -61,15 +90,20 @@
             keys.splice(index, 1);
             return keys;
         });
+        regexDrafts.value = removeIndexedEntry(regexDrafts.value, index);
+        regexErrors.value = removeIndexedEntry(regexErrors.value, index);
     };
 
     const moveKey = (index, dir) => {
+        const currentLen = Array.isArray(params.value.keys) ? params.value.keys.length : 0;
+        const target = index + dir;
+        if (target < 0 || target >= currentLen) return;
         updateKeys((keys) => {
-            const target = index + dir;
-            if (target < 0 || target >= keys.length) return keys;
             [keys[index], keys[target]] = [keys[target], keys[index]];
             return keys;
         });
+        regexDrafts.value = swapIndexedMap(regexDrafts.value, index, target);
+        regexErrors.value = swapIndexedMap(regexErrors.value, index, target);
     };
 
     const updateKeyField = (index, field, value) => {
@@ -83,6 +117,10 @@
             keys[index] = next;
             return keys;
         });
+        if (field === 'key') {
+            regexDrafts.value = omitIndexedEntry(regexDrafts.value, index);
+            regexErrors.value = omitIndexedEntry(regexErrors.value, index);
+        }
     };
 
     const getRegionEmoji = (region) => {
@@ -115,9 +153,29 @@
         });
     };
 
+    const clearRegexError = (idx) => {
+        regexErrors.value = omitIndexedEntry(regexErrors.value, idx);
+    };
+
+    const handleRegexEnter = (event, idx) => {
+        if (event?.isComposing || event?.keyCode === 229) return;
+        event?.preventDefault?.();
+        addCustomOrderItem(idx);
+    };
+
     const addCustomOrderItem = (idx) => {
         const raw = String(regexDrafts.value[idx] || '').trim();
         if (!raw) return;
+        try {
+            new RegExp(raw, 'i');
+        } catch {
+            regexErrors.value = {
+                ...regexErrors.value,
+                [idx]: t('operators.invalidRegexError'),
+            };
+            return;
+        }
+        clearRegexError(idx);
         updateKeys((keys) => {
             const current = keys[idx];
             if (!current) return keys;
@@ -130,7 +188,7 @@
             }
             return keys;
         });
-        regexDrafts.value = { ...regexDrafts.value, [idx]: '' };
+        regexDrafts.value = omitIndexedEntry(regexDrafts.value, idx);
     };
 
     const removeCustomOrderItem = (idx, tagIdx) => {
@@ -151,6 +209,7 @@
             keys[idx] = { ...current, customOrder: [] };
             return keys;
         });
+        clearRegexError(idx);
     };
 
     const getPriorityTypeLabelKey = (key) => {
@@ -328,21 +387,32 @@
                     </div>
 
                     <!-- Regex Input Row -->
-                    <div v-if="item.key === 'regex'" class="flex items-center gap-1.5">
-                        <input
-                            v-model="regexDrafts[idx]"
-                            type="text"
-                            @keydown.enter.prevent="addCustomOrderItem(idx)"
-                            :placeholder="t('operators.regexPinPlaceholder')"
-                            class="flex-1 px-2.5 py-1 text-[11px] rounded-md bg-gray-50 dark:bg-gray-900 border border-gray-200/70 dark:border-gray-800 text-gray-900 dark:text-gray-100 focus:bg-white dark:focus:bg-gray-800 focus:border-indigo-500/40 transition-all outline-none"
-                        />
-                        <button
-                            type="button"
-                            @click="addCustomOrderItem(idx)"
-                            class="px-2.5 py-1 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold transition-colors shrink-0"
-                        >
-                            + {{ t('operators.add') }}
-                        </button>
+                    <div v-if="item.key === 'regex'" class="space-y-1">
+                        <div class="flex items-center gap-1.5">
+                            <input
+                                v-model="regexDrafts[idx]"
+                                type="text"
+                                @input="clearRegexError(idx)"
+                                @keydown.enter="handleRegexEnter($event, idx)"
+                                :placeholder="t('operators.regexPinPlaceholder')"
+                                :class="[
+                                    'flex-1 px-2.5 py-1 text-[11px] rounded-md bg-gray-50 dark:bg-gray-900 border text-gray-900 dark:text-gray-100 focus:bg-white dark:focus:bg-gray-800 transition-all outline-none',
+                                    regexErrors[idx]
+                                        ? 'border-rose-400 dark:border-rose-500/70 focus:border-rose-500'
+                                        : 'border-gray-200/70 dark:border-gray-800 focus:border-indigo-500/40',
+                                ]"
+                            />
+                            <button
+                                type="button"
+                                @click="addCustomOrderItem(idx)"
+                                class="px-2.5 py-1 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold transition-colors shrink-0"
+                            >
+                                + {{ t('operators.add') }}
+                            </button>
+                        </div>
+                        <p v-if="regexErrors[idx]" class="text-[10px] text-rose-500">
+                            {{ regexErrors[idx] }}
+                        </p>
                     </div>
 
                     <!-- Drag and Drop Tags List -->

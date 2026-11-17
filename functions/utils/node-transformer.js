@@ -697,7 +697,9 @@ export function makeComparator(sortCfg) {
             if (!rule) return;
             const pattern =
                 typeof rule === 'string' ? rule.trim() : String(rule.pattern || '').trim();
-            const flags = typeof rule === 'string' ? 'i' : rule.flags || 'i';
+            // 剥离带状态的 g / y 标志，避免 comparator 多次调用 .test() 时受 lastIndex 影响
+            const rawFlags = typeof rule === 'string' ? 'i' : rule.flags || 'i';
+            const flags = String(rawFlags).replace(/[gy]/g, '');
             if (!pattern) return;
             try {
                 compiled.push({ re: new RegExp(pattern, flags), index: idx });

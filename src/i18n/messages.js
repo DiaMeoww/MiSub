@@ -1288,6 +1288,7 @@ export const messages = {
             resetDefault: '重置默认',
             clearAll: '清空',
             regexPinPlaceholder: '输入关键词或正则 (如: 亚马逊、dmit)，回车添加',
+            invalidRegexError: '正则表达式语法有误，请检查括号或转义符',
             emptyRegexPriorityItems:
                 '暂无置顶规则，在上方输入关键词或正则并添加，未匹配的节点将排在后面',
             emptyPriorityItems: '暂无排序优先项，节点将随机退化为纯文本对比',
@@ -3194,6 +3195,7 @@ export const messages = {
             resetDefault: 'Reset default',
             clearAll: 'Clear all',
             regexPinPlaceholder: 'Enter keyword or regex (e.g. AWS, dmit) and press Enter',
+            invalidRegexError: 'Invalid regular expression syntax. Please check brackets or escapes.',
             emptyRegexPriorityItems:
                 'No pin rules yet. Add keywords or regexes above; unmatched nodes are placed after matched ones.',
             emptyPriorityItems:

@@ -88,4 +88,62 @@ describe('SortEditor', () => {
         expect(emitted).toBeTruthy();
         expect(emitted[0][0].keys[0].customOrder).toEqual(['dmit']);
     });
+
+    it('ignores Enter during IME composition and validates invalid regex syntax', async () => {
+        const wrapper = mountSortEditor({
+            keys: [{ key: 'regex', order: 'asc', customOrder: [] }],
+        });
+
+        const input = wrapper.find('input[type="text"]');
+        await input.setValue('yamaxun');
+        await input.trigger('keydown.enter', { isComposing: true });
+        expect(wrapper.emitted('update:modelValue')).toBeFalsy();
+
+        await input.setValue('[HK');
+        await input.trigger('keydown.enter', { isComposing: false });
+        expect(wrapper.emitted('update:modelValue')).toBeFalsy();
+        expect(wrapper.text()).toContain('正则表达式语法有误');
+
+        await input.setValue('亚马逊');
+        expect(wrapper.text()).not.toContain('正则表达式语法有误');
+
+        await input.trigger('keydown.enter', { isComposing: false });
+        const emitted = wrapper.emitted('update:modelValue');
+        expect(emitted).toBeTruthy();
+        expect(emitted[0][0].keys[0].customOrder).toEqual(['亚马逊']);
+    });
+
+    it('keeps unsubmitted regex drafts aligned when reordering sort conditions', async () => {
+        const model = {
+            keys: [
+                { key: 'region', order: 'asc', customOrder: ['香港'] },
+                { key: 'regex', order: 'asc', customOrder: [] },
+            ],
+        };
+        const wrapper = mount(SortEditor, {
+            props: {
+                modelValue: model,
+                'onUpdate:modelValue': (val) => wrapper.setProps({ modelValue: val }),
+            },
+            global: {
+                plugins: [createI18n({ initialLocale: 'zh-CN' })],
+                stubs: {
+                    draggable: {
+                        props: ['modelValue'],
+                        template:
+                            '<div><div v-for="(element, index) in modelValue" :key="element.id"><slot name="item" :element="element" :index="index" /></div></div>',
+                    },
+                },
+            },
+        });
+
+        const inputBefore = wrapper.find('input[type="text"]');
+        await inputBefore.setValue('dmit');
+
+        const moveUpButtons = wrapper.findAll('button[aria-label="上移"]');
+        await moveUpButtons[1].trigger('click');
+
+        const inputAfter = wrapper.find('input[type="text"]');
+        expect(inputAfter.element.value).toBe('dmit');
+    });
 });

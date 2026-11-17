@@ -173,4 +173,36 @@ describe('applyNodeTransformPipeline filters', () => {
             'HK 阿里云 01',
         ]);
     });
+
+    it('keeps regex matching stateless even when object rules specify g or y flags', () => {
+        const records = [
+            { name: 'Node C' },
+            { name: 'AWS Node 1' },
+            { name: 'AWS Node 2' },
+            { name: 'Node D' },
+            { name: 'AWS Node 3' },
+            { name: 'AWS Node 4' },
+        ];
+
+        const comparator = makeComparator({
+            keys: [
+                {
+                    key: 'regex',
+                    order: 'asc',
+                    customOrder: [{ pattern: 'aws', flags: 'gi' }],
+                },
+                { key: 'name', order: 'asc' },
+            ],
+        });
+
+        const sortedNames = [...records].sort(comparator).map((r) => r.name);
+        expect(sortedNames).toEqual([
+            'AWS Node 1',
+            'AWS Node 2',
+            'AWS Node 3',
+            'AWS Node 4',
+            'Node C',
+            'Node D',
+        ]);
+    });
 });
