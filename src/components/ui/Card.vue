@@ -183,7 +183,7 @@
 
     const hasFooterMeta = computed(() => Boolean(noteWithoutUrl.value || websiteUrl.value));
 
-    const formatNodeCacheTime = (value, includeYearAndSeconds = false) => {
+    const formatNodeCacheTime = (value) => {
         if (!value) return '';
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) return '';
@@ -196,21 +196,14 @@
         const minutes = pad(date.getMinutes());
         const seconds = pad(date.getSeconds());
 
-        if (includeYearAndSeconds) {
-            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-        }
-
-        return year === new Date().getFullYear()
-            ? `${month}-${day} ${hours}:${minutes}`
-            : `${year}-${month}-${day} ${hours}:${minutes}`;
+        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
     };
 
     const nodeCacheInfo = computed(() => {
         if (props.misub?.enableNodeCache !== true) return null;
 
-        const shortTime = formatNodeCacheTime(props.misub?.nodeCacheUpdatedAt, false);
-        const fullTime = formatNodeCacheTime(props.misub?.nodeCacheUpdatedAt, true);
-        if (!shortTime || !fullTime) {
+        const fullTime = formatNodeCacheTime(props.misub?.nodeCacheUpdatedAt);
+        if (!fullTime) {
             return {
                 hasCache: false,
                 display: t('subscriptions.nodeCacheEmpty'),
@@ -229,7 +222,7 @@
 
         return {
             hasCache: true,
-            display: shortTime,
+            display: fullTime,
             tooltip,
         };
     });

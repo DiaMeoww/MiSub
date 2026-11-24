@@ -35,7 +35,7 @@ function mountCard(misub, locale = 'zh-CN') {
     });
 }
 
-function formatExpectedLocal(iso, includeYearAndSeconds = false) {
+function formatExpectedLocal(iso) {
     const date = new Date(iso);
     const pad = (n) => String(n).padStart(2, '0');
     const year = date.getFullYear();
@@ -44,12 +44,7 @@ function formatExpectedLocal(iso, includeYearAndSeconds = false) {
     const hours = pad(date.getHours());
     const minutes = pad(date.getMinutes());
     const seconds = pad(date.getSeconds());
-    if (includeYearAndSeconds) {
-        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-    }
-    return year === new Date().getFullYear()
-        ? `${month}-${day} ${hours}:${minutes}`
-        : `${year}-${month}-${day} ${hours}:${minutes}`;
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
 describe('subscription protective node cache timestamp display', () => {
@@ -91,8 +86,8 @@ describe('subscription protective node cache timestamp display', () => {
 
         const row = wrapper.get('[data-testid="subscription-node-cache-time"]');
         expect(row.text()).toContain('缓存时间');
-        expect(row.text()).toContain(formatExpectedLocal(iso, false));
-        expect(row.attributes('title')).toContain(formatExpectedLocal(iso, true));
+        expect(row.text()).toContain(formatExpectedLocal(iso));
+        expect(row.attributes('title')).toContain(formatExpectedLocal(iso));
         expect(row.attributes('title')).toContain('84');
     });
 
