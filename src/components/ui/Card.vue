@@ -182,6 +182,57 @@
     });
 
     const hasFooterMeta = computed(() => Boolean(noteWithoutUrl.value || websiteUrl.value));
+
+    const formatNodeCacheTime = (value, includeYearAndSeconds = false) => {
+        if (!value) return '';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '';
+
+        const pad = (num) => String(num).padStart(2, '0');
+        const year = date.getFullYear();
+        const month = pad(date.getMonth() + 1);
+        const day = pad(date.getDate());
+        const hours = pad(date.getHours());
+        const minutes = pad(date.getMinutes());
+        const seconds = pad(date.getSeconds());
+
+        if (includeYearAndSeconds) {
+            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        }
+
+        return year === new Date().getFullYear()
+            ? `${month}-${day} ${hours}:${minutes}`
+            : `${year}-${month}-${day} ${hours}:${minutes}`;
+    };
+
+    const nodeCacheInfo = computed(() => {
+        if (props.misub?.enableNodeCache !== true) return null;
+
+        const shortTime = formatNodeCacheTime(props.misub?.nodeCacheUpdatedAt, false);
+        const fullTime = formatNodeCacheTime(props.misub?.nodeCacheUpdatedAt, true);
+        if (!shortTime || !fullTime) {
+            return {
+                hasCache: false,
+                display: t('subscriptions.nodeCacheEmpty'),
+                tooltip: t('subscriptions.nodeCacheEmptyTooltip'),
+            };
+        }
+
+        const cachedCount = Number(props.misub?.nodeCacheCount);
+        const tooltip =
+            Number.isFinite(cachedCount) && cachedCount > 0
+                ? t('subscriptions.nodeCacheTimeTooltipWithCount', {
+                      time: fullTime,
+                      count: cachedCount,
+                  })
+                : t('subscriptions.nodeCacheTimeTooltip', { time: fullTime });
+
+        return {
+            hasCache: true,
+            display: shortTime,
+            tooltip,
+        };
+    });
 </script>
 
 <template>
@@ -449,6 +500,26 @@
                                 ? t('subscriptions.updating')
                                 : t('subscriptions.nodeCount', { count: misub.nodeCount || 0 })
                         }}
+                    </span>
+                </div>
+                <div
+                    v-if="nodeCacheInfo"
+                    data-testid="subscription-node-cache-time"
+                    class="flex items-center justify-between gap-2 text-xs"
+                    :title="nodeCacheInfo.tooltip"
+                >
+                    <span class="shrink-0 text-gray-500 dark:text-gray-400">{{
+                        t('subscriptions.nodeCacheTimeLabel')
+                    }}</span>
+                    <span
+                        class="truncate tabular-nums"
+                        :class="
+                            nodeCacheInfo.hasCache
+                                ? 'font-medium text-gray-700 dark:text-gray-200'
+                                : 'text-gray-500 dark:text-gray-400'
+                        "
+                    >
+                        {{ nodeCacheInfo.display }}
                     </span>
                 </div>
             </div>
