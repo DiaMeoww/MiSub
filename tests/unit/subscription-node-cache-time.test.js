@@ -35,7 +35,7 @@ function mountCard(misub, locale = 'zh-CN') {
     });
 }
 
-function formatExpectedLocal(iso) {
+function formatExpectedLocal(iso, alwaysIncludeYear = false) {
     const date = new Date(iso);
     const pad = (n) => String(n).padStart(2, '0');
     const year = date.getFullYear();
@@ -44,7 +44,10 @@ function formatExpectedLocal(iso) {
     const hours = pad(date.getHours());
     const minutes = pad(date.getMinutes());
     const seconds = pad(date.getSeconds());
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    if (alwaysIncludeYear || year !== new Date().getFullYear()) {
+        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    }
+    return `${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
 describe('subscription protective node cache timestamp display', () => {
@@ -71,24 +74,42 @@ describe('subscription protective node cache timestamp display', () => {
         expect(wrapper.find('[data-testid="subscription-node-cache-time"]').exists()).toBe(false);
     });
 
-    it('renders formatted cache time and tooltip with cached node count when enabled', () => {
-        const iso = new Date(new Date().getFullYear(), 10, 24, 14, 20, 5).toISOString();
-        const wrapper = mountCard({
+    it('renders formatted cache time with seconds (MM-DD HH:mm:ss for current year, YYYY-MM-DD HH:mm:ss across years)', () => {
+        const currentYear = new Date().getFullYear();
+        const sameYearIso = new Date(currentYear, 10, 24, 14, 20, 5).toISOString();
+        const sameYearWrapper = mountCard({
             id: 'sub_on',
             name: '已开启缓存',
             url: 'https://example.com/sub',
             enabled: true,
             nodeCount: 84,
             enableNodeCache: true,
-            nodeCacheUpdatedAt: iso,
+            nodeCacheUpdatedAt: sameYearIso,
             nodeCacheCount: 84,
         });
 
-        const row = wrapper.get('[data-testid="subscription-node-cache-time"]');
-        expect(row.text()).toContain('缓存时间');
-        expect(row.text()).toContain(formatExpectedLocal(iso));
-        expect(row.attributes('title')).toContain(formatExpectedLocal(iso));
-        expect(row.attributes('title')).toContain('84');
+        const sameYearRow = sameYearWrapper.get('[data-testid="subscription-node-cache-time"]');
+        expect(sameYearRow.text()).toContain('缓存时间');
+        expect(sameYearRow.text()).toContain(formatExpectedLocal(sameYearIso, false));
+        expect(sameYearRow.text()).not.toContain(`${currentYear}-`);
+        expect(sameYearRow.attributes('title')).toContain(formatExpectedLocal(sameYearIso, true));
+        expect(sameYearRow.attributes('title')).toContain('84');
+
+        const prevYearIso = new Date(currentYear - 1, 11, 31, 23, 59, 59).toISOString();
+        const prevYearWrapper = mountCard({
+            id: 'sub_prev_year',
+            name: '跨年缓存',
+            url: 'https://example.com/sub',
+            enabled: true,
+            nodeCount: 12,
+            enableNodeCache: true,
+            nodeCacheUpdatedAt: prevYearIso,
+            nodeCacheCount: 12,
+        });
+
+        const prevYearRow = prevYearWrapper.get('[data-testid="subscription-node-cache-time"]');
+        expect(prevYearRow.text()).toContain(formatExpectedLocal(prevYearIso, false));
+        expect(prevYearRow.text()).toContain(`${currentYear - 1}-`);
     });
 
     it('renders empty cache fallback when enabled without cache data or with invalid date', () => {

@@ -183,7 +183,7 @@
 
     const hasFooterMeta = computed(() => Boolean(noteWithoutUrl.value || websiteUrl.value));
 
-    const formatNodeCacheTime = (value) => {
+    const formatNodeCacheTime = (value, alwaysIncludeYear = false) => {
         if (!value) return '';
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) return '';
@@ -196,14 +196,19 @@
         const minutes = pad(date.getMinutes());
         const seconds = pad(date.getSeconds());
 
-        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        if (alwaysIncludeYear || year !== new Date().getFullYear()) {
+            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        }
+
+        return `${month}-${day} ${hours}:${minutes}:${seconds}`;
     };
 
     const nodeCacheInfo = computed(() => {
         if (props.misub?.enableNodeCache !== true) return null;
 
-        const fullTime = formatNodeCacheTime(props.misub?.nodeCacheUpdatedAt);
-        if (!fullTime) {
+        const displayTime = formatNodeCacheTime(props.misub?.nodeCacheUpdatedAt, false);
+        const fullTime = formatNodeCacheTime(props.misub?.nodeCacheUpdatedAt, true);
+        if (!displayTime || !fullTime) {
             return {
                 hasCache: false,
                 display: t('subscriptions.nodeCacheEmpty'),
@@ -222,7 +227,7 @@
 
         return {
             hasCache: true,
-            display: fullTime,
+            display: displayTime,
             tooltip,
         };
     });
