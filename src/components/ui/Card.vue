@@ -549,7 +549,7 @@
                         class="group/cache relative inline-flex min-w-0 items-center"
                     >
                         <span
-                            class="inline-flex min-w-0 cursor-default items-center gap-1.5 tabular-nums"
+                            class="inline-flex min-w-0 items-center gap-1.5 tabular-nums"
                             :class="nodeCacheInfo.valueClass"
                         >
                             <span
