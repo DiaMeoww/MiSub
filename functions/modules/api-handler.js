@@ -73,6 +73,12 @@ async function attachProfileDownloadCounts(storageAdapter, profiles) {
     );
 }
 
+function collectProtectiveCacheKeys(misubs) {
+    return (Array.isArray(misubs) ? misubs : [])
+        .filter((sub) => sub?.enableNodeCache === true)
+        .map((sub) => buildSubscriptionNodeCacheKey(sub));
+}
+
 function stripTransientSubscriptionFields(sub) {
     if (!sub || typeof sub !== 'object') return sub;
     if (
@@ -513,9 +519,7 @@ export async function handleMisubsSave(request, env) {
 
         // 步骤6.5: 清除节点缓存（订阅变动后确保拉取最新数据）
         try {
-            const preserveKeys = (Array.isArray(finalMisubs) ? finalMisubs : [])
-                .filter((sub) => sub?.enableNodeCache === true)
-                .map((sub) => buildSubscriptionNodeCacheKey(sub));
+            const preserveKeys = collectProtectiveCacheKeys(finalMisubs);
             const cacheResult = await clearAllNodeCaches(storageAdapter, { preserveKeys });
             console.info(
                 `[API] Cleared ${cacheResult.cleared} node caches after subscription update, preserved ${cacheResult.skipped || 0}`
@@ -714,9 +718,14 @@ export async function handleSettingsSave(request, env) {
         const preferencesOnly = request.headers.get('x-misub-save-scope') === 'preferences';
 
         if (!preferencesOnly) {
-            // 清除节点缓存（设置变更可能影响节点处理逻辑）
+            // 清除节点缓存（设置变更可能影响节点处理逻辑；保留开启保护性缓存的单源节点缓存）
             try {
-                await clearAllNodeCaches(storageAdapter);
+                const currentMisubs =
+                    typeof storageAdapter.getAllSubscriptions === 'function'
+                        ? await storageAdapter.getAllSubscriptions()
+                        : (await storageAdapter.get(KV_KEY_SUBS)) || [];
+                const preserveKeys = collectProtectiveCacheKeys(currentMisubs);
+                await clearAllNodeCaches(storageAdapter, { preserveKeys });
             } catch (cacheError) {
                 console.warn('[API] Failed to clear node caches:', cacheError.message);
             }
