@@ -85,11 +85,14 @@ describe('subscription protective node cache timestamp display', () => {
         const wrapper = mountCard(makeSub(iso));
 
         const row = wrapper.get('[data-testid="subscription-node-cache-time"]');
+        const triggerEl = wrapper.get('[data-testid="subscription-node-cache-trigger"]');
         const valueEl = wrapper.get('[data-testid="subscription-node-cache-value"]');
         const dotEl = wrapper.get('[data-testid="subscription-node-cache-dot"]');
         const tooltipEl = wrapper.get('[data-testid="subscription-node-cache-tooltip"]');
 
         expect(row.text()).toContain('缓存时间');
+        expect(row.classes()).not.toContain('group/cache');
+        expect(triggerEl.classes()).toContain('group/cache');
         expect(row.attributes('title')).toBeUndefined();
         expect(valueEl.text()).toBe('00:00:16');
         expect(dotEl.classes()).toContain('bg-emerald-500');

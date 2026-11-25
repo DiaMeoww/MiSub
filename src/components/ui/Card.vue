@@ -539,67 +539,72 @@
                 <div
                     v-if="nodeCacheInfo"
                     data-testid="subscription-node-cache-time"
-                    class="group/cache relative flex items-center justify-between gap-2 text-xs"
+                    class="flex items-center justify-between gap-2 text-xs"
                 >
                     <span class="shrink-0 text-gray-500 dark:text-gray-400">{{
                         t('subscriptions.nodeCacheTimeLabel')
                     }}</span>
-                    <span
-                        class="inline-flex min-w-0 cursor-default items-center gap-1.5 tabular-nums"
-                        :class="nodeCacheInfo.valueClass"
+                    <div
+                        data-testid="subscription-node-cache-trigger"
+                        class="group/cache relative inline-flex min-w-0 items-center"
                     >
                         <span
-                            data-testid="subscription-node-cache-dot"
-                            class="h-1.5 w-1.5 shrink-0 rounded-full"
-                            :class="nodeCacheInfo.dotClass"
-                            aria-hidden="true"
-                        ></span>
-                        <span data-testid="subscription-node-cache-value" class="truncate">
-                            {{ nodeCacheInfo.display }}
+                            class="inline-flex min-w-0 cursor-default items-center gap-1.5 tabular-nums"
+                            :class="nodeCacheInfo.valueClass"
+                        >
+                            <span
+                                data-testid="subscription-node-cache-dot"
+                                class="h-1.5 w-1.5 shrink-0 rounded-full"
+                                :class="nodeCacheInfo.dotClass"
+                                aria-hidden="true"
+                            ></span>
+                            <span data-testid="subscription-node-cache-value" class="truncate">
+                                {{ nodeCacheInfo.display }}
+                            </span>
                         </span>
-                    </span>
 
-                    <div
-                        role="tooltip"
-                        data-testid="subscription-node-cache-tooltip"
-                        class="pointer-events-none invisible absolute bottom-full right-0 z-20 mb-2 w-max max-w-[230px] translate-y-1 rounded-lg border border-gray-200/90 bg-white/95 px-3 py-2 text-[11px] leading-relaxed text-gray-700 opacity-0 shadow-lg backdrop-blur-md transition-all duration-150 group-hover/cache:visible group-hover/cache:translate-y-0 group-hover/cache:opacity-100 dark:border-white/10 dark:bg-gray-900/95 dark:text-gray-200 dark:shadow-black/40"
-                    >
-                        <template v-if="nodeCacheInfo.hasCache">
-                            <div class="flex items-center justify-between gap-2.5">
-                                <span
-                                    class="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-                                    :class="nodeCacheInfo.badgeClass"
-                                >
+                        <div
+                            role="tooltip"
+                            data-testid="subscription-node-cache-tooltip"
+                            class="pointer-events-none invisible absolute bottom-full right-0 z-20 mb-2 w-max max-w-[230px] translate-y-1 rounded-lg border border-gray-200/90 bg-white/95 px-3 py-2 text-[11px] leading-relaxed text-gray-700 opacity-0 shadow-lg backdrop-blur-md transition-all duration-150 group-hover/cache:visible group-hover/cache:translate-y-0 group-hover/cache:opacity-100 dark:border-white/10 dark:bg-gray-900/95 dark:text-gray-200 dark:shadow-black/40"
+                        >
+                            <template v-if="nodeCacheInfo.hasCache">
+                                <div class="flex items-center justify-between gap-2.5">
                                     <span
-                                        class="h-1.5 w-1.5 rounded-full"
-                                        :class="nodeCacheInfo.dotClass"
-                                    ></span>
-                                    {{ nodeCacheInfo.statusLabel }}
-                                </span>
-                                <span
-                                    v-if="nodeCacheInfo.cachedCount > 0"
-                                    class="text-[10px] text-gray-500 dark:text-gray-400"
+                                        class="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                                        :class="nodeCacheInfo.badgeClass"
+                                    >
+                                        <span
+                                            class="h-1.5 w-1.5 rounded-full"
+                                            :class="nodeCacheInfo.dotClass"
+                                        ></span>
+                                        {{ nodeCacheInfo.statusLabel }}
+                                    </span>
+                                    <span
+                                        v-if="nodeCacheInfo.cachedCount > 0"
+                                        class="text-[10px] text-gray-500 dark:text-gray-400"
+                                    >
+                                        {{
+                                            t('subscriptions.nodeCacheTooltipCount', {
+                                                count: nodeCacheInfo.cachedCount,
+                                            })
+                                        }}
+                                    </span>
+                                </div>
+                                <div
+                                    class="mt-1.5 font-mono text-[11px] font-medium tabular-nums text-gray-800 dark:text-gray-100"
                                 >
-                                    {{
-                                        t('subscriptions.nodeCacheTooltipCount', {
-                                            count: nodeCacheInfo.cachedCount,
-                                        })
-                                    }}
-                                </span>
+                                    {{ nodeCacheInfo.fullTime }}
+                                </div>
+                            </template>
+                            <div v-else class="whitespace-normal text-gray-600 dark:text-gray-300">
+                                {{ nodeCacheInfo.emptyHint }}
                             </div>
                             <div
-                                class="mt-1.5 font-mono text-[11px] font-medium tabular-nums text-gray-800 dark:text-gray-100"
-                            >
-                                {{ nodeCacheInfo.fullTime }}
-                            </div>
-                        </template>
-                        <div v-else class="whitespace-normal text-gray-600 dark:text-gray-300">
-                            {{ nodeCacheInfo.emptyHint }}
+                                class="absolute -bottom-1 right-4 h-2 w-2 rotate-45 border-b border-r border-gray-200/90 bg-white/95 dark:border-white/10 dark:bg-gray-900/95"
+                                aria-hidden="true"
+                            ></div>
                         </div>
-                        <div
-                            class="absolute -bottom-1 right-4 h-2 w-2 rotate-45 border-b border-r border-gray-200/90 bg-white/95 dark:border-white/10 dark:bg-gray-900/95"
-                            aria-hidden="true"
-                        ></div>
                     </div>
                 </div>
             </div>
