@@ -183,11 +183,9 @@
 
     const hasFooterMeta = computed(() => Boolean(noteWithoutUrl.value || websiteUrl.value));
 
-    const formatNodeCacheTime = (value, alwaysIncludeYear = false) => {
-        if (!value) return '';
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) return '';
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
+    const formatFullDateTime = (date) => {
         const pad = (num) => String(num).padStart(2, '0');
         const year = date.getFullYear();
         const month = pad(date.getMonth() + 1);
@@ -195,26 +193,56 @@
         const hours = pad(date.getHours());
         const minutes = pad(date.getMinutes());
         const seconds = pad(date.getSeconds());
+        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    };
 
-        if (alwaysIncludeYear || year !== new Date().getFullYear()) {
-            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    const formatNodeCacheDisplayTime = (date, now) => {
+        const pad = (num) => String(num).padStart(2, '0');
+        const year = date.getFullYear();
+        const month = pad(date.getMonth() + 1);
+        const day = pad(date.getDate());
+        const timePart = `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const targetStart = new Date(year, date.getMonth(), date.getDate());
+        const calendarDayDiff = Math.round((todayStart - targetStart) / ONE_DAY_MS);
+
+        if (calendarDayDiff === 0) {
+            return timePart;
         }
-
-        return `${month}-${day} ${hours}:${minutes}:${seconds}`;
+        if (calendarDayDiff === 1) {
+            return `${t('subscriptions.nodeCacheYesterday')} ${timePart}`;
+        }
+        if (calendarDayDiff === 2) {
+            return `${t('subscriptions.nodeCacheDayBeforeYesterday')} ${timePart}`;
+        }
+        if (calendarDayDiff >= 3 && calendarDayDiff <= 6) {
+            return `${t('subscriptions.nodeCacheDaysAgo', { count: calendarDayDiff })} ${timePart}`;
+        }
+        if (year !== now.getFullYear()) {
+            return `${year}-${month}-${day} ${timePart}`;
+        }
+        return `${month}-${day} ${timePart}`;
     };
 
     const nodeCacheInfo = computed(() => {
         if (props.misub?.enableNodeCache !== true) return null;
 
-        const displayTime = formatNodeCacheTime(props.misub?.nodeCacheUpdatedAt, false);
-        const fullTime = formatNodeCacheTime(props.misub?.nodeCacheUpdatedAt, true);
-        if (!displayTime || !fullTime) {
+        const raw = props.misub?.nodeCacheUpdatedAt;
+        const date = raw ? new Date(raw) : null;
+        if (!date || Number.isNaN(date.getTime())) {
             return {
                 hasCache: false,
                 display: t('subscriptions.nodeCacheEmpty'),
                 tooltip: t('subscriptions.nodeCacheEmptyTooltip'),
+                valueClass: 'text-gray-500 dark:text-gray-400',
             };
         }
+
+        const now = new Date();
+        const isFresh = now.getTime() - date.getTime() <= ONE_DAY_MS;
+        const displayTime = formatNodeCacheDisplayTime(date, now);
+        const fullTime = formatFullDateTime(date);
 
         const cachedCount = Number(props.misub?.nodeCacheCount);
         const tooltip =
@@ -227,8 +255,12 @@
 
         return {
             hasCache: true,
+            isFresh,
             display: displayTime,
             tooltip,
+            valueClass: isFresh
+                ? 'font-medium text-green-600 dark:text-green-400'
+                : 'font-medium text-amber-600 dark:text-amber-400',
         };
     });
 </script>
@@ -509,14 +541,7 @@
                     <span class="shrink-0 text-gray-500 dark:text-gray-400">{{
                         t('subscriptions.nodeCacheTimeLabel')
                     }}</span>
-                    <span
-                        class="truncate tabular-nums"
-                        :class="
-                            nodeCacheInfo.hasCache
-                                ? 'font-medium text-gray-700 dark:text-gray-200'
-                                : 'text-gray-500 dark:text-gray-400'
-                        "
-                    >
+                    <span class="truncate tabular-nums" :class="nodeCacheInfo.valueClass">
                         {{ nodeCacheInfo.display }}
                     </span>
                 </div>
