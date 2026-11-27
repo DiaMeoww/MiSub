@@ -131,8 +131,8 @@ jobs:
               echo ""
               echo "手动处理：\`git fetch upstream && git merge upstream/main\`，解决冲突后 \`git push origin main\`。"
             } >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
-            echo "::warning title=合并冲突已跳过::${CONFLICTED:-unknown}"
-            exit 0
+            echo "::error title=合并冲突已终止::${CONFLICTED:-unknown}"
+            exit 1
           fi
 
           if [ "$(git rev-parse HEAD)" = "$BEFORE_SHA" ]; then
