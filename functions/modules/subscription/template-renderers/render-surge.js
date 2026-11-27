@@ -1,5 +1,6 @@
 import { urlsToClashProxies } from '../../../utils/url-to-clash.js';
 import { normalizeUnifiedTemplateModel } from '../template-model.js';
+import { pinRemoteRuleUrl } from '../builtin-rules-provider.js';
 
 function buildProxyLine(proxy) {
     const type = String(proxy.type || '').toLowerCase();
@@ -274,33 +275,32 @@ function buildProxyGroupLine(group) {
               )
             : rawMembers
     ).join(', ');
+    // ACL4SSR regex filters are expanded to concrete group.members before rendering.
+    // Surge policy-path accepts an external file/URL, not a node-name regex.
     const filter =
         Array.isArray(group.filters) && group.filters.length > 0 ? group.filters.join('|') : '';
     const tolerance = group.options?.tolerance;
     if (type === 'url-test') {
-        const base = filter
-            ? `${group.name} = url-test, policy-path=${filter}, url=${group.options?.url || 'http://www.gstatic.com/generate_204'}, interval=${group.options?.interval || 300}`
-            : `${group.name} = url-test, ${members}, url=${group.options?.url || 'http://www.gstatic.com/generate_204'}, interval=${group.options?.interval || 300}`;
+        const base = `${group.name} = url-test, ${members}, url=${group.options?.url || 'http://www.gstatic.com/generate_204'}, interval=${group.options?.interval || 300}`;
         return tolerance ? `${base}, tolerance=${tolerance}` : base;
     }
     if (type === 'fallback') {
-        const base = filter
-            ? `${group.name} = fallback, policy-path=${filter}, url=${group.options?.url || 'http://www.gstatic.com/generate_204'}, interval=${group.options?.interval || 300}`
-            : `${group.name} = fallback, ${members}, url=${group.options?.url || 'http://www.gstatic.com/generate_204'}, interval=${group.options?.interval || 300}`;
+        const base = `${group.name} = fallback, ${members}, url=${group.options?.url || 'http://www.gstatic.com/generate_204'}, interval=${group.options?.interval || 300}`;
         return tolerance ? `${base}, tolerance=${tolerance}` : base;
     }
     if (type === 'load-balance') {
         return filter
-            ? `${group.name} = load-balance, policy-path=${filter}, url=${group.options?.url || 'http://www.gstatic.com/generate_204'}, interval=${group.options?.interval || 300}`
+            ? `${group.name} = load-balance, ${members}, url=${group.options?.url || 'http://www.gstatic.com/generate_204'}, interval=${group.options?.interval || 300}`
             : `${group.name} = load-balance, ${members}`;
     }
     return `${group.name} = select, ${members}`;
 }
 
-function buildRuleLine(rule) {
+function buildRuleLine(rule, { isChinaClient = false } = {}) {
     const type = String(rule.type || '').toUpperCase();
     if (!type) return null;
-    if (type === 'RULE-SET') return `RULE-SET,${rule.value},${rule.policy}`;
+    if (type === 'RULE-SET')
+        return `RULE-SET,${pinRemoteRuleUrl(rule.value, { isChinaClient })},${rule.policy}`;
     if (type === 'MATCH' || type === 'FINAL') return `FINAL,${rule.policy}`;
     if (type === 'GEOIP') return `GEOIP,${rule.value || 'CN'},${rule.policy}`;
     return `${type},${rule.value},${rule.policy}`;
@@ -331,7 +331,9 @@ export function renderSurgeFromTemplateModel(model, options = {}) {
         .filter((group) => Array.isArray(group.members) && group.members.length > 0)
         .map(buildProxyGroupLine)
         .filter(Boolean);
-    const ruleLines = normalizedModel.rules.map(buildRuleLine).filter(Boolean);
+    const ruleLines = normalizedModel.rules
+        .map((rule) => buildRuleLine(rule, { isChinaClient: options.isChinaClient }))
+        .filter(Boolean);
 
     return [
         '[General]',
